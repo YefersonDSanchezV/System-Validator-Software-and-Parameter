@@ -1,7 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.schemas.solicitud_parametro import SolicitudParametroCreate, SolicitudParametroResponse
+from app.schemas.solicitud_parametro import (
+    SolicitudParametroCreate,
+    SolicitudParametroResponse,
+    SolicitudHabilitarAction,
+    SolicitudRechazarAction,
+    SolicitudExtensionAction,
+)
 from app.services.solicitud_parametro_service import SolicitudParametroService
 
 router = APIRouter(
@@ -19,6 +25,39 @@ def listar(db: Session = Depends(get_db)):
 def crear(data: SolicitudParametroCreate, db: Session = Depends(get_db)):
     try:
         return service.crear(db, data)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/{oid}/habilitar", response_model=SolicitudParametroResponse)
+def habilitar(oid: int, data: SolicitudHabilitarAction, db: Session = Depends(get_db)):
+    try:
+        return service.habilitar(db, oid, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/{oid}/rechazar", response_model=SolicitudParametroResponse)
+def rechazar(oid: int, data: SolicitudRechazarAction, db: Session = Depends(get_db)):
+    try:
+        return service.rechazar(db, oid, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/{oid}/habilitar-extension", response_model=SolicitudParametroResponse)
+def habilitar_extension(oid: int, data: SolicitudExtensionAction, db: Session = Depends(get_db)):
+    try:
+        return service.habilitar_extension(db, oid, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc

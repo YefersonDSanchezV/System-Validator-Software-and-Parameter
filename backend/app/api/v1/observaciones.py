@@ -17,6 +17,14 @@ def listar(db: Session = Depends(get_db)):
     return service.listar(db)
 
 
+@router.get("/version/{version_id}", response_model=list[ObservacionResponse])
+def listar_por_version(version_id: int, db: Session = Depends(get_db)):
+    try:
+        return service.listar_por_version(db, version_id)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="No fue posible obtener las observaciones de la versión") from exc
+
+
 @router.post("/", response_model=ObservacionResponse, status_code=201)
 def crear(data: ObservacionCreate, db: Session = Depends(get_db)):
     try:

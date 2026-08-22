@@ -1,15 +1,13 @@
-from fastapi import APIRouter
-from fastapi import Depends
-from fastapi import HTTPException
-
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-
 from app.core.database import get_db
-
-from app.schemas.version import VersionCreate
-from app.schemas.version import VersionResponse
-from app.schemas.version import VersionUpdate
-
+from app.schemas.version import (
+    VersionCreate,
+    VersionResponse,
+    VersionUpdate,
+    RestauracionDBCreate,
+    RestauracionDBResponse
+)
 from app.services.version_service import VersionService
 
 router = APIRouter(
@@ -23,6 +21,20 @@ service = VersionService()
 @router.get("/", response_model=list[VersionResponse])
 def listar(db: Session = Depends(get_db)):
     return service.listar(db)
+
+
+@router.get("/restauraciones", response_model=list[RestauracionDBResponse])
+def listar_restauraciones(db: Session = Depends(get_db)):
+    return service.listar_restauraciones(db)
+
+
+@router.post("/restauraciones", response_model=RestauracionDBResponse, status_code=201)
+def crear_restauracion(data: RestauracionDBCreate, db: Session = Depends(get_db)):
+    try:
+        return service.crear_restauracion(db, data)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="No fue posible registrar la restauración de BD") from exc
 
 
 @router.get("/{oid}", response_model=VersionResponse)

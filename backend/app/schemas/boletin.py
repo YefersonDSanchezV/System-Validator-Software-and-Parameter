@@ -15,6 +15,8 @@ class BoletinBase(BaseModel):
     clase_documento: str | None = None
     advertencia: str | None = None
     instructivo_descripcion: str | None = None
+    mes: int
+    anio: int
     archivo: str | None = None
 
 
@@ -27,3 +29,14 @@ class BoletinResponse(BoletinBase):
     fecha_registro: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BoletinPeriodo(BaseModel):
+    mes: int
+    anio: int
+
+
+class BoletinImportResponse(BaseModel):
+    mes: int
+    anio: int
+    inserted_rows: int

@@ -22,7 +22,13 @@ class RegRechazado(Base):
         ForeignKey("firmas.oid", ondelete="RESTRICT"),
         nullable=False
     )
+    captura_id = Column(
+        Integer,
+        ForeignKey("firmas.oid", ondelete="RESTRICT"),
+        nullable=True
+    )
     fecha_registro = Column(TIMESTAMP, nullable=False)
 
     validacion = relationship("RegValidacion", back_populates="rechazos")
-    firma = relationship("Firma")
+    firma = relationship("Firma", foreign_keys=[firma_id])
+    captura = relationship("Firma", foreign_keys=[captura_id])

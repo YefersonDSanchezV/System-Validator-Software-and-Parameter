@@ -1,10 +1,10 @@
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.schemas.boletin import BoletinCreate, BoletinResponse
+from app.schemas.boletin import BoletinResponse, BoletinPeriodo, BoletinImportResponse
 from app.services.boletin_service import BoletinService
-from app.utils.file_storage import save_upload_file
+from app.models.boletines import Boletin
+from app.utils.pdf_generator import generate_boletin_pdf
 
 router = APIRouter(
     prefix="/boletines",
@@ -15,46 +15,47 @@ service = BoletinService()
 
 
 @router.get("/", response_model=list[BoletinResponse])
-def listar(db: Session = Depends(get_db)):
-    return service.listar(db)
+def listar(
+    mes: int | None = Query(None, ge=1, le=12),
+    anio: int | None = Query(None, ge=2000, le=2100),
+    db: Session = Depends(get_db),
+):
+    return service.listar(db, mes=mes, anio=anio)
 
 
-@router.post("/", response_model=BoletinResponse, status_code=201)
+@router.get("/periodos", response_model=list[BoletinPeriodo])
+def listar_periodos(db: Session = Depends(get_db)):
+    return service.listar_periodos(db)
+
+
+@router.get("/{oid}/pdf")
+def descargar_pdf(oid: int, db: Session = Depends(get_db)):
+    boletin = db.query(Boletin).filter(Boletin.oid == oid).first()
+    if not boletin:
+        raise HTTPException(status_code=404, detail="Boletín no encontrado")
+    try:
+        pdf_bytes = generate_boletin_pdf(boletin)
+        filename = f"boletin_{boletin.consecutivo or oid}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generando PDF: {str(e)}")
+
+
+@router.post("/", response_model=BoletinImportResponse, status_code=201)
 async def crear(
-    tipo_documento: str | None = Form(None),
-    consecutivo: int | None = Form(None),
-    fecha: datetime | None = Form(None),
-    modulo: str | None = Form(None),
-    opcion: str | None = Form(None),
-    impacto: str | None = Form(None),
-    categoria: str | None = Form(None),
-    con_documentacion: bool = Form(False),
-    asunto: str | None = Form(None),
-    clase_documento: str | None = Form(None),
-    advertencia: str | None = Form(None),
-    instructivo_descripcion: str | None = Form(None),
-    archivo: UploadFile | None = File(None),
+    mes: int = Form(...),
+    anio: int = Form(...),
+    archivo: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
     try:
-        archivo_url = None
-        if archivo is not None:
-            archivo_url = await save_upload_file(archivo)
-        data = BoletinCreate(
-            tipo_documento=tipo_documento,
-            consecutivo=consecutivo,
-            fecha=fecha,
-            modulo=modulo,
-            opcion=opcion,
-            impacto=impacto,
-            categoria=categoria,
-            con_documentacion=con_documentacion,
-            asunto=asunto,
-            clase_documento=clase_documento,
-            advertencia=advertencia,
-            instructivo_descripcion=instructivo_descripcion,
-            archivo=archivo_url,
-        )
-        return service.crear(db, data)
+        if not archivo.filename.lower().endswith(".xlsx"):
+            raise HTTPException(status_code=400, detail="El archivo debe ser de tipo .xlsx")
+        content = await archivo.read()
+        return service.importar_excel(db, excel_bytes=content, mes=mes, anio=anio)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

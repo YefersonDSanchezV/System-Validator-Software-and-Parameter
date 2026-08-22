@@ -8,17 +8,58 @@ from app.core.database import Base, SessionLocal, engine
 from app.models.solicitud_parametro import SolicitudParametro
 from app.utils.file_storage import ensure_upload_dir
 
-from app.api.v1 import versions
-from app.api.v1 import observaciones
-from app.api.v1 import boletines
-from app.api.v1 import manuales
-from app.api.v1 import admin
-from app.api.v1 import solicitud_parametro
+import logging
+import os
+from datetime import datetime
+from contextlib import asynccontextmanager
+
+from app.api.v1 import (
+    versions,
+    observaciones,
+    boletines,
+    manuales,
+    admin,
+    solicitud_parametro,
+    parametros_clinicos,
+    auth, # auth is in api.v1.auth based on dir structure
+    reportes, # reportes is in api.v1.reportes
+    auditoria,
+)
+from app.core.audit_middleware import AuditMiddleware
+from app.core.scheduler import init_scheduler
+
+# Configure root logger so all app.* loggers emit to stdout (visible in Docker logs)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    os.makedirs(settings.UPLOAD_FOLDER, exist_ok=True)
+    logger.info("Directorio de subidas verificado o creado: %s", settings.UPLOAD_FOLDER)
+    
+    # Iniciar scheduler
+    scheduler = init_scheduler()
+    
+    yield
+    
+    # Detener scheduler al apagar
+    if scheduler.running:
+        scheduler.shutdown()
+        logger.info("Scheduler detenido.")
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version=settings.APP_VERSION
+    version=settings.APP_VERSION,
+    lifespan=lifespan
 )
+
+# Audit logging middleware
+app.add_middleware(AuditMiddleware)
 
 # Ensure upload directory exists and expose it via static path
 upload_dir = ensure_upload_dir()
@@ -44,6 +85,51 @@ with engine.begin() as conn:
     conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS total_unidad VARCHAR(20)"))
     conn.execute(text("ALTER TABLE solicitud_parametro ALTER COLUMN fecha_apertura DROP NOT NULL"))
     conn.execute(text("ALTER TABLE solicitud_parametro ALTER COLUMN fecha_cierre DROP NOT NULL"))
+    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS hora_apertura VARCHAR(20)"))
+    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS hora_cierre VARCHAR(20)"))
+    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS area VARCHAR(200)"))
+    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS consecutivo VARCHAR(50)"))
+    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS motivo_rechazo TEXT"))
+    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS solicitud_extension VARCHAR(100)"))
+    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS observacion_resolucion TEXT"))
+
+    # Email recipient columns for configuracion_parametros
+    conn.execute(text("ALTER TABLE configuracion_parametros ADD COLUMN IF NOT EXISTS correos_historia_clinica TEXT"))
+    conn.execute(text("ALTER TABLE configuracion_parametros ADD COLUMN IF NOT EXISTS correos_enfermeria TEXT"))
+    conn.execute(text("ALTER TABLE configuracion_parametros ADD COLUMN IF NOT EXISTS correos_otros TEXT"))
+
+    # Backfill missing consecutivos
+    rows = conn.execute(text("SELECT oid, fecha_registro FROM solicitud_parametro WHERE consecutivo IS NULL ORDER BY oid ASC")).fetchall()
+    counts = {}
+    for r in rows:
+        dt = r[1] or datetime.now()
+        prefix = f"{dt.year}-{dt.month:02d}"
+        counts[prefix] = counts.get(prefix, 0) + 1
+        cons = f"{prefix}-{counts[prefix]:03d}"
+        conn.execute(text("UPDATE solicitud_parametro SET consecutivo = :cons WHERE oid = :oid"), {"cons": cons, "oid": r[0]})
+
+    # Migrate legacy estado values to 'Autorizado Solicitud Previa'
+    conn.execute(text("UPDATE solicitud_parametro SET estado = 'Autorizado Solicitud Previa' WHERE estado IN ('Habilitado por extensión', 'Habilitado por extension', 'Habilitado por extencion')"))
+
+    # Ensure default row in configuracion_parametros
+    conf_exists = conn.execute(text("SELECT id FROM configuracion_parametros LIMIT 1")).fetchone()
+    if not conf_exists:
+        conn.execute(text("""
+            INSERT INTO configuracion_parametros (id, hc_default, enf_hcrenf_default, enf_haplmed_default, hora_restablecimiento, auto_restablecer, tipos_habilitados, updated_at)
+            VALUES (1, 30, 48, 48, '20:05', true, '["Historia Clinica", "Enfermeria", "Otros"]'::json, NOW())
+        """))
+
+    conn.execute(text("ALTER TABLE boletines ADD COLUMN IF NOT EXISTS mes INTEGER"))
+    conn.execute(text("ALTER TABLE boletines ADD COLUMN IF NOT EXISTS anio INTEGER"))
+    conn.execute(text("UPDATE boletines SET mes = EXTRACT(MONTH FROM COALESCE(fecha, fecha_registro, NOW())) WHERE mes IS NULL"))
+    conn.execute(text("UPDATE boletines SET anio = EXTRACT(YEAR FROM COALESCE(fecha, fecha_registro, NOW())) WHERE anio IS NULL"))
+    conn.execute(text("ALTER TABLE boletines ALTER COLUMN mes SET NOT NULL"))
+    conn.execute(text("ALTER TABLE boletines ALTER COLUMN anio SET NOT NULL"))
+
+    # RegVersion new columns
+    conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS contenedor_bd VARCHAR(50)"))
+    conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS num_compilacion VARCHAR(100)"))
+    conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS fecha_compilacion TIMESTAMP"))
 
 # Register routers
 app.include_router(versions.router, prefix="/api/v1")
@@ -52,6 +138,8 @@ app.include_router(boletines.router, prefix="/api/v1")
 app.include_router(manuales.router, prefix="/api/v1")
 app.include_router(solicitud_parametro.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(parametros_clinicos.router, prefix="/api/v1")
+app.include_router(auditoria.router, prefix="/api/v1")
 
 
 @app.get("/")

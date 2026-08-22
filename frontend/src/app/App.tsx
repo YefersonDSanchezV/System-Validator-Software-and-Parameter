@@ -1,308 +1,441 @@
 import { useState, useRef, useEffect } from "react";
-// Same-origin in Docker (Nginx proxies /api), configurable for other deployments.
-const API_BASE_URL = ((import.meta as any).env?.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
 import {
   Monitor, ShieldCheck, X, Eye, Pencil, Power, CheckCircle,
   XCircle, Download, Plus, ExternalLink, FileText, BookOpen,
   BarChart3, ArrowLeft, Upload, Printer, AlertCircle,
   ChevronDown, ChevronRight, Settings, Home, ClipboardList,
-  Link,
+  Link, RotateCcw,
 } from "lucide-react";
+import { toast } from "sonner";
+import { Toaster } from "sonner";
+import { MODULOS, MODULO_LABELS, MODULOS_VALIDATOR } from "@/config/constants";
+import { api } from "@/lib/api/client";
+import { Modal, StatusBadge, Btn, Field, FormInput, FormTextarea, SectionHeader, EmptyState, type BtnVariant } from "@/components/ui/custom";
+import { type EstadoVersion, type Version, type ApiVersion, type RestauracionDB, toVersion } from "@/types/version";
+import { type EstadoObs, type Observacion } from "@/types/observacion";
+import { type ApiBoletin, type ApiBoletinPeriodo, type ApiBoletinImportResult } from "@/types/boletin";
+import { type ApiManual, type SolicitudManual } from "@/types/manual";
+import { type ApiSolicitudParametro, type SolicitudParametro, type EstadoSolicitud, type ConfiguracionParametrosDTO, toSolicitudParametro } from "@/types/solicitud-parametro";
+import { type ParametrosEstado } from "@/types/parametros";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const MODULOS = [
-  "ADMISIONES", "CARTERA", "CONTABILIDAD", "CONTRATOS_IPS",
-  "FACTURACION", "HOSPITALIZACION", "INVENTARIOS", "PAGOS",
-  "TESORERIA", "GENERALES_SEGURIDAD", "CITAS_MEDICAS",
-  "HISTORIAS_CLINICAS", "ACTIVOS_FIJOS", "NOMINA",
-  "INFORMACION_FINANCIERA_NIIF", "GESTION_GERENCIAL",
-  "WEB_CITAS_MEDICAS", "PROGRAMACION_DE_CIRUGIAS",
-];
-const MODULO_LABELS: Record<string, string> = {
-  CONTRATOS_IPS: "CONTRATOS IPS",
-  GENERALES_SEGURIDAD: "GENERALES & SEGURIDAD",
-  CITAS_MEDICAS: "CITAS MEDICAS",
-  HISTORIAS_CLINICAS: "HISTORIAS CLINICAS",
-  ACTIVOS_FIJOS: "ACTIVOS FIJOS",
-  WEB_CITAS_MEDICAS: "WEB CITAS MEDICAS",
-  PROGRAMACION_DE_CIRUGIAS: "PROGRAMACION DE CIRUGIAS",
-};
-const MODULOS_VALIDATOR = [...MODULOS, "OTROS"];
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type EstadoVersion = "activo" | "inactivo";
-type EstadoObs = "aprobacion" | "rechazo";
-
-interface Version {
-  id: string;
-  titulo: string;
-  descripcion: string;
-  enlace: string;
-  fechaRegistro: string;
-  estado: EstadoVersion;
-}
-
-interface Observacion {
-  id: string;
-  versionId: string;
-  modulo: string;
-  nombre: string;
-  cargo?: string;
-  fechaHora: string;
-  estado: EstadoObs;
-  observacion: string;
-  incidencia?: string;
-  ruta?: string;
-  firma?: string;
-}
-
-interface ApiVersion {
-  oid: number;
-  titulo: string;
-  descripcion: string;
-  enlace: string;
-  estado: boolean;
-  fecha_registro: string | null;
-}
-
-interface ApiBoletin {
-  oid: number;
-  tipo_documento: string | null;
-  consecutivo: number | null;
-  fecha: string | null;
-  asunto: string | null;
-  instructivo_descripcion: string | null;
-  archivo: string | null;
-}
-
-interface ApiManual {
-  oid: number;
-  modulo: string;
-  titulo: string;
-  version: string | null;
-  fecha_registro: string;
-  archivo: string | null;
-}
-
-interface ApiSolicitudParametro {
-  oid: number;
-  tipo_parametro: string;
-  descripcion: string;
-  fecha_apertura: string | null;
-  fecha_cierre: string | null;
-  total_valor: number | null;
-  total_unidad: string | null;
-  solicitante: string;
-  estado: string;
-  fecha_registro: string;
-}
-
-const toSolicitudParametro = (item: ApiSolicitudParametro): SolicitudParametro => ({
-  id: item.oid,
-  tipoParametro: item.tipo_parametro as SolicitudParametro["tipoParametro"],
-  descripcion: item.descripcion,
-  fechaApertura: item.fecha_apertura ?? "",
-  fechaCierre: item.fecha_cierre ?? "",
-  totalValor: item.total_valor,
-  totalUnidad: item.total_unidad,
-  solicitante: item.solicitante,
-  estado: item.estado as EstadoSolicitud,
-  fechaRegistro: item.fecha_registro,
-});
-
-type EstadoSolicitud = "Pendiente" | "Aprobado";
-
-interface SolicitudParametro {
-  id: number;
-  tipoParametro: "Enfermeria" | "Historia Clinica" | "Otros";
-  descripcion: string;
-  fechaApertura: string;
-  fechaCierre: string;
-  totalValor: number | null;
-  totalUnidad: string | null;
-  solicitante: string;
-  estado: EstadoSolicitud;
-  fechaRegistro: string;
-}
-
-const toVersion = (version: ApiVersion): Version => ({
-  id: `v${version.oid}`,
-  titulo: version.titulo,
-  descripcion: version.descripcion,
-  enlace: version.enlace,
-  fechaRegistro: version.fecha_registro?.slice(0, 10) ?? "",
-  estado: version.estado ? "activo" : "inactivo",
-});
-
-async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const headers = new Headers(options?.headers as HeadersInit);
-  const body = options?.body;
-  if (!(body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
+function ParametroBadge({ title, abierto, valor, valor2 }: { title: string, abierto: boolean, valor: number, valor2?: number }) {
+  const valueText = valor2 !== undefined ? `: ${valor}, : ${valor2}` : `${valor}`;
+  if (abierto) {
+    return (
+      <div className="bg-emerald-100 text-emerald-800 px-4 py-2 rounded-2xl text-xs md:text-sm font-bold ring-1 ring-emerald-300 shadow-sm flex items-center gap-2">
+        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+        Parametro {title} Abierto {valueText}
+      </div>
+    );
   }
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => null);
-    throw new Error(body?.detail ?? "No fue posible completar la operación.");
-  }
-  return response.json() as Promise<T>;
+  return (
+    <div className="bg-red-100 text-red-800 px-4 py-2 rounded-2xl text-xs md:text-sm font-bold ring-1 ring-red-300 shadow-sm flex items-center gap-2">
+      <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+      Parametro {title} Cerrado {valueText}
+    </div>
+  );
 }
 
-
-// ─── Shared UI Components ─────────────────────────────────────────────────────
-
-function Modal({
-  open, onClose, title, children, size = "md",
+function HabilitarParametroModal({
+  open, onClose, onRefresh, onError
 }: {
+  open: boolean; onClose: () => void; onRefresh: () => void; onError: (msg: string) => void;
+}) {
+  const [tipo, setTipo] = useState<"Enfermeria" | "Historia Clinica" | "Otros">("Enfermeria");
+  const [hcpdiaaut, setHcpdiaaut] = useState(30);
+  const [hcnmhcrenf, setHcnmhcrenf] = useState(48);
+  const [hcnhaplmed, setHcnhaplmed] = useState(48);
+  const [observacion, setObservacion] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const canSubmit = observacion.trim().length >= 5;
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    setSaving(true);
+    api("/parametros-clinicos/habilitar", {
+      method: "POST",
+      body: JSON.stringify({
+        tipo,
+        hcpdiaaut: tipo === "Historia Clinica" ? hcpdiaaut : null,
+        hcnmhcrenf: tipo === "Enfermeria" ? hcnmhcrenf : null,
+        hcnhaplmed: tipo === "Enfermeria" ? hcnhaplmed : null,
+        observacion: observacion.trim()
+      })
+    }).then(() => {
+      onRefresh();
+      onClose();
+      setObservacion("");
+    }).catch((e) => {
+      onError(e instanceof Error ? e.message : "Error al actualizar parametro");
+    }).finally(() => {
+      setSaving(false);
+    });
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Habilitar/Cerrar Parámetro General">
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">Tipo de Parámetro</label>
+          <select
+            value={tipo}
+            onChange={(e) => setTipo(e.target.value as any)}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+          >
+            <option value="Enfermeria">Enfermería</option>
+            <option value="Historia Clinica">Historia Clínica</option>
+            <option value="Otros">Otros</option>
+          </select>
+        </div>
+        {tipo === "Historia Clinica" && (
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">Valor (HCPDIAAUT)</label>
+            <input
+              type="number"
+              value={hcpdiaaut}
+              onChange={(e) => setHcpdiaaut(Number(e.target.value))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+            />
+          </div>
+        )}
+        {tipo === "Enfermeria" && (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">Valor (HCNMHRCRENF)</label>
+              <input
+                type="number"
+                value={hcnmhcrenf}
+                onChange={(e) => setHcnmhcrenf(Number(e.target.value))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">Valor (HCNHAPLMED)</label>
+              <input
+                type="number"
+                value={hcnhaplmed}
+                onChange={(e) => setHcnhaplmed(Number(e.target.value))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+              />
+            </div>
+          </div>
+        )}
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">Observación {tipo === "Otros" && <span className="normal-case text-slate-400">(Describa qué parámetro se está habilitando)</span>}</label>
+          <textarea
+            value={observacion}
+            onChange={(e) => setObservacion(e.target.value)}
+            placeholder={tipo === "Otros" ? "Describa qué parámetro se está habilitando..." : "¿Para quién y qué se solicitó?"}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white min-h-[80px]"
+          />
+        </div>
+        <div className="flex gap-2 pt-4 border-t border-slate-100">
+          <Btn v="primary" onClick={handleSubmit} disabled={!canSubmit || saving}>
+            Confirmar
+          </Btn>
+          <Btn v="secondary" onClick={onClose}>Cancelar</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function HabilitarSolicitudModal({
+  solicitud,
+  open,
+  onClose,
+  onSuccess,
+  onError,
+}: {
+  solicitud: SolicitudParametro | null;
   open: boolean;
   onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-  size?: "sm" | "md" | "lg" | "xl";
+  onSuccess: (updated: SolicitudParametro) => void;
+  onError: (msg: string) => void;
 }) {
-  if (!open) return null;
-  const w = { sm: "max-w-md", md: "max-w-2xl", lg: "max-w-4xl", xl: "max-w-6xl" }[size];
+  if (!solicitud) return null;
+
+  const tipo = solicitud.tipoParametro;
+  const defaultValue = solicitud.totalValor ?? (tipo === "Historia Clinica" ? 30 : 48);
+
+  const [hcpdiaaut, setHcpdiaaut] = useState(defaultValue);
+  const [hcnmhcrenf, setHcnmhcrenf] = useState(defaultValue);
+  const [hcnhaplmed, setHcnhaplmed] = useState(defaultValue);
+  const [observacion, setObservacion] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (solicitud) {
+      const val = solicitud.totalValor ?? (solicitud.tipoParametro === "Historia Clinica" ? 30 : 48);
+      setHcpdiaaut(val);
+      setHcnmhcrenf(val);
+      setHcnhaplmed(val);
+      setObservacion(`Habilitado según solicitud ${solicitud.consecutivo} para ${solicitud.solicitante}`);
+    }
+  }, [solicitud]);
+
+  const handleSubmit = () => {
+    setSaving(true);
+    api<ApiSolicitudParametro>(`/solicitud-parametro/${solicitud.id}/habilitar`, {
+      method: "PUT",
+      body: JSON.stringify({
+        hcpdiaaut: tipo === "Historia Clinica" ? hcpdiaaut : null,
+        hcnmhcrenf: tipo === "Enfermeria" ? hcnmhcrenf : null,
+        hcnhaplmed: tipo === "Enfermeria" ? hcnhaplmed : null,
+        observacion: observacion.trim(),
+      }),
+    })
+      .then((res) => {
+        onSuccess(toSolicitudParametro(res));
+        onClose();
+      })
+      .catch((e) => {
+        onError(e instanceof Error ? e.message : "Error al habilitar el parámetro");
+      })
+      .finally(() => {
+        setSaving(false);
+      });
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div
-        className={`relative bg-white rounded-2xl shadow-2xl w-full ${w} max-h-[90vh] flex flex-col border border-slate-200`}
-      >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-2xl shrink-0">
-          <h2 className="font-semibold text-slate-800 text-sm">{title}</h2>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-200 transition-colors text-slate-500"
-          >
-            <X size={16} />
-          </button>
+    <Modal open={open} onClose={onClose} title={`Habilitar Parámetro - Solicitud ${solicitud.consecutivo}`} size="md">
+      <div className="space-y-4">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-700 grid grid-cols-2 gap-2">
+          <div><span className="text-slate-400 font-semibold uppercase">Tipo:</span> <span className="font-bold text-[#0778ac]">{solicitud.tipoParametro}</span></div>
+          <div><span className="text-slate-400 font-semibold uppercase">Solicitante:</span> <span className="font-semibold">{solicitud.solicitante}</span></div>
+          <div><span className="text-slate-400 font-semibold uppercase">Área:</span> <span className="font-semibold">{solicitud.area || "—"}</span></div>
+          <div><span className="text-slate-400 font-semibold uppercase">Total Solicitado:</span> <span className="font-bold text-slate-900">{solicitud.totalValor ? `${solicitud.totalValor} ${solicitud.totalUnidad}` : "—"}</span></div>
         </div>
-        <div className="overflow-y-auto flex-1 p-6">{children}</div>
+
+        {tipo === "Historia Clinica" && (
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">Valor (HCPDIAAUT)</label>
+            <input
+              type="number"
+              value={hcpdiaaut}
+              onChange={(e) => setHcpdiaaut(Number(e.target.value))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white font-semibold"
+            />
+          </div>
+        )}
+
+        {tipo === "Enfermeria" && (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">Valor (HCNMHRCRENF)</label>
+              <input
+                type="number"
+                value={hcnmhcrenf}
+                onChange={(e) => setHcnmhcrenf(Number(e.target.value))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white font-semibold"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">Valor (HCNHAPLMED)</label>
+              <input
+                type="number"
+                value={hcnhaplmed}
+                onChange={(e) => setHcnhaplmed(Number(e.target.value))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white font-semibold"
+              />
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">
+            Observación {tipo === "Otros" && <span className="normal-case text-slate-400">(Describa qué parámetro se está habilitando)</span>}
+          </label>
+          <textarea
+            value={observacion}
+            onChange={(e) => setObservacion(e.target.value)}
+            placeholder="Observación o justificación..."
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white min-h-[80px]"
+          />
+        </div>
+
+        <div className="flex gap-2 pt-4 border-t border-slate-100 justify-end">
+          <Btn v="secondary" onClick={onClose}>Cancelar</Btn>
+          <Btn v="primary" onClick={handleSubmit} disabled={saving}>
+            Confirmar Habilitación
+          </Btn>
+        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
-function StatusBadge({ estado }: { estado: string }) {
-  const map: Record<string, string> = {
-    activo: "bg-emerald-100 text-emerald-700 ring-emerald-200/60",
-    inactivo: "bg-slate-100 text-slate-500 ring-slate-200",
-    aprobacion: "bg-[#0778ac]/15 text-[#0778ac] ring-[#0778ac]/30",
-    rechazo: "bg-[#d43a39]/15 text-[#d43a39] ring-[#d43a39]/30",
-    Pendiente: "bg-slate-100 text-slate-600 ring-slate-200",
-    Aprobado: "bg-[#0778ac]/15 text-[#0778ac] ring-[#0778ac]/30",
-  };
-  const labels: Record<string, string> = {
-    activo: "Activo", inactivo: "Inactivo",
-    aprobacion: "Aprobación", rechazo: "Rechazo",
-    Pendiente: "Pendiente", Aprobado: "Aprobado",
-  };
-  return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${map[estado] ?? "bg-slate-100 text-slate-600 ring-slate-200"}`}
-    >
-      {labels[estado] ?? estado}
-    </span>
-  );
-}
-
-type BtnVariant = "primary" | "secondary" | "success" | "danger" | "ghost" | "warning" | "info";
-
-function Btn({
-  children, v = "primary", sm = false, onClick, disabled, type = "button", className = "",
+function RechazarSolicitudModal({
+  solicitud,
+  open,
+  onClose,
+  onSuccess,
+  onError,
 }: {
-  children: React.ReactNode;
-  v?: BtnVariant;
-  sm?: boolean;
-  onClick?: () => void;
-  disabled?: boolean;
-  type?: "button" | "submit";
-  className?: string;
+  solicitud: SolicitudParametro | null;
+  open: boolean;
+  onClose: () => void;
+  onSuccess: (updated: SolicitudParametro) => void;
+  onError: (msg: string) => void;
 }) {
-  const styles: Record<BtnVariant, string> = {
-    primary: "bg-[#0778ac] text-white hover:bg-[#056b95] border-[#0778ac]",
-    secondary: "bg-white text-slate-700 hover:bg-slate-50 border-slate-300",
-    success: "bg-[#0778ac] text-white hover:bg-[#056b95] border-[#0778ac]",
-    danger: "bg-[#d43a39] text-white hover:bg-[#b13333] border-[#d43a39]",
-    ghost: "bg-transparent text-slate-600 hover:bg-slate-100 border-transparent",
-    warning: "bg-[#d43a39] text-white hover:bg-[#b13333] border-[#d43a39]",
-    info: "bg-[#0778ac] text-white hover:bg-[#056b95] border-[#0778ac]",
+  if (!solicitud) return null;
+  const [motivo, setMotivo] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setMotivo("");
+  }, [solicitud]);
+
+  const handleSubmit = () => {
+    if (!motivo.trim()) return;
+    setSaving(true);
+    api<ApiSolicitudParametro>(`/solicitud-parametro/${solicitud.id}/rechazar`, {
+      method: "PUT",
+      body: JSON.stringify({ motivo: motivo.trim() }),
+    })
+      .then((res) => {
+        onSuccess(toSolicitudParametro(res));
+        onClose();
+      })
+      .catch((e) => {
+        onError(e instanceof Error ? e.message : "Error al rechazar la solicitud");
+      })
+      .finally(() => {
+        setSaving(false);
+      });
   };
+
   return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className={`inline-flex items-center gap-1.5 border rounded-lg font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm ${
-        sm ? "px-2.5 py-1 text-xs" : "px-4 py-2 text-sm"
-      } ${styles[v]} ${className}`}
-    >
-      {children}
-    </button>
+    <Modal open={open} onClose={onClose} title={`Rechazar Parámetro - Solicitud ${solicitud.consecutivo}`} size="md">
+      <div className="space-y-4">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-xs text-red-900 grid grid-cols-2 gap-2">
+          <div><span className="text-red-500 font-semibold uppercase">Tipo:</span> <span className="font-bold">{solicitud.tipoParametro}</span></div>
+          <div><span className="text-red-500 font-semibold uppercase">Solicitante:</span> <span className="font-semibold">{solicitud.solicitante}</span></div>
+          <div><span className="text-red-500 font-semibold uppercase">Área:</span> <span className="font-semibold">{solicitud.area || "—"}</span></div>
+          <div><span className="text-red-500 font-semibold uppercase">Total:</span> <span className="font-bold">{solicitud.totalValor ? `${solicitud.totalValor} ${solicitud.totalUnidad}` : "—"}</span></div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">
+            Motivo de Rechazo *
+          </label>
+          <textarea
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            placeholder="Indique claramente por qué se rechaza la habilitación de este parámetro..."
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white min-h-[100px]"
+          />
+        </div>
+
+        <div className="flex gap-2 pt-4 border-t border-slate-100 justify-end">
+          <Btn v="secondary" onClick={onClose}>Cancelar</Btn>
+          <Btn v="danger" onClick={handleSubmit} disabled={!motivo.trim() || saving}>
+            Confirmar Rechazo
+          </Btn>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{label}</span>
-      <span className="text-sm text-slate-800">{value}</span>
-    </div>
-  );
-}
+function AutorizadoPreviaSolicitudModal({
+  solicitud,
+  solicitudes,
+  open,
+  onClose,
+  onSuccess,
+  onError,
+}: {
+  solicitud: SolicitudParametro | null;
+  solicitudes: SolicitudParametro[];
+  open: boolean;
+  onClose: () => void;
+  onSuccess: (updated: SolicitudParametro) => void;
+  onError: (msg: string) => void;
+}) {
+  if (!solicitud) return null;
+  const [solicitudExtension, setSolicitudExtension] = useState("");
+  const [observacion, setObservacion] = useState("");
+  const [saving, setSaving] = useState(false);
 
-function FormInput({
-  label, required: req, ...props
-}: React.InputHTMLAttributes<HTMLInputElement> & { label: string; required?: boolean }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
-        {label}
-        {req && <span className="text-red-500 ml-1">*</span>}
-      </label>
-      <input
-        {...props}
-        className="px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0778ac] focus:border-[#0778ac] transition-all placeholder:text-slate-400"
-      />
-    </div>
-  );
-}
+  useEffect(() => {
+    setSolicitudExtension("");
+    setObservacion("");
+  }, [solicitud]);
 
-function FormTextarea({
-  label, required: req, ...props
-}: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; required?: boolean }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
-        {label}
-        {req && <span className="text-red-500 ml-1">*</span>}
-      </label>
-      <textarea
-        {...props}
-        className="px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0778ac] focus:border-[#0778ac] transition-all resize-none placeholder:text-slate-400"
-      />
-    </div>
-  );
-}
+  const otrasSolicitudes = solicitudes.filter(s => s.id !== solicitud.id);
 
-function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <div className="mb-6">
-      <h1 className="text-lg font-semibold text-slate-900">{title}</h1>
-      {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
-    </div>
-  );
-}
+  const handleSubmit = () => {
+    if (!solicitudExtension.trim()) return;
+    setSaving(true);
+    api<ApiSolicitudParametro>(`/solicitud-parametro/${solicitud.id}/habilitar-extension`, {
+      method: "PUT",
+      body: JSON.stringify({
+        solicitud_extension: solicitudExtension.trim(),
+        observacion: observacion.trim(),
+      }),
+    })
+      .then((res) => {
+        onSuccess(toSolicitudParametro(res));
+        onClose();
+      })
+      .catch((e) => {
+        onError(e instanceof Error ? e.message : "Error al registrar autorización previa");
+      })
+      .finally(() => {
+        setSaving(false);
+      });
+  };
 
-function EmptyState({ message }: { message: string }) {
   return (
-    <div className="text-center py-12 text-slate-400 text-sm">{message}</div>
+    <Modal open={open} onClose={onClose} title={`Autorizar Solicitud Previa - Solicitud ${solicitud.consecutivo}`} size="md">
+      <div className="space-y-4">
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3.5 text-xs text-indigo-900 grid grid-cols-2 gap-2">
+          <div><span className="text-indigo-500 font-semibold uppercase">Tipo:</span> <span className="font-bold">{solicitud.tipoParametro}</span></div>
+          <div><span className="text-indigo-500 font-semibold uppercase">Solicitante:</span> <span className="font-semibold">{solicitud.solicitante}</span></div>
+          <div><span className="text-indigo-500 font-semibold uppercase">Área:</span> <span className="font-semibold">{solicitud.area || "—"}</span></div>
+          <div><span className="text-indigo-500 font-semibold uppercase">Total:</span> <span className="font-bold">{solicitud.totalValor ? `${solicitud.totalValor} ${solicitud.totalUnidad}` : "—"}</span></div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">
+            Bajo qué otra solicitud se autoriza este parámetro *
+          </label>
+          <input
+            list="solicitudes-extension-list"
+            value={solicitudExtension}
+            onChange={(e) => setSolicitudExtension(e.target.value)}
+            placeholder="Seleccione o digite el consecutivo (ej. 2026-08-001)"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+          />
+          <datalist id="solicitudes-extension-list">
+            {otrasSolicitudes.map(s => (
+              <option key={s.id} value={s.consecutivo}>{s.consecutivo} - {s.tipoParametro} ({s.solicitante})</option>
+            ))}
+          </datalist>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">
+            Observación / Justificación (Opcional)
+          </label>
+          <textarea
+            value={observacion}
+            onChange={(e) => setObservacion(e.target.value)}
+            placeholder="Detalles sobre la autorización previa..."
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white min-h-[80px]"
+          />
+        </div>
+
+        <div className="flex gap-2 pt-4 border-t border-slate-100 justify-end">
+          <Btn v="secondary" onClick={onClose}>Cancelar</Btn>
+          <Btn v="primary" onClick={handleSubmit} disabled={!solicitudExtension.trim() || saving}>
+            Confirmar Autorización Previa
+          </Btn>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -311,39 +444,80 @@ function SolicitudParametroSection({
   setSolicitudes,
   onError,
   canApprove = false,
+  canHabilitarParametro = false,
 }: {
   solicitudes: SolicitudParametro[];
   setSolicitudes: React.Dispatch<React.SetStateAction<SolicitudParametro[]>>;
   onError: (message: string) => void;
   canApprove?: boolean;
+  canHabilitarParametro?: boolean;
 }) {
   const [form, setForm] = useState({
     tipoParametro: "Enfermeria" as SolicitudParametro["tipoParametro"],
     descripcion: "",
     fechaApertura: "",
     fechaCierre: "",
+    horaApertura: "",
+    horaCierre: "",
     solicitante: "",
+    area: "",
+    ingreso: "",
+    medico: "",
   });
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resettingDefecto, setResettingDefecto] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const [open, setOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [coordModalOpen, setCoordModalOpen] = useState(false);
   const [selectedSolicitud, setSelectedSolicitud] = useState<SolicitudParametro | null>(null);
 
+  const [habilitarModalOpen, setHabilitarModalOpen] = useState(false);
+  const [habilitarModalItem, setHabilitarModalItem] = useState<SolicitudParametro | null>(null);
+
+  const [rechazarModalOpen, setRechazarModalOpen] = useState(false);
+  const [rechazarModalItem, setRechazarModalItem] = useState<SolicitudParametro | null>(null);
+
+  const [extensionModalOpen, setExtensionModalOpen] = useState(false);
+  const [extensionModalItem, setExtensionModalItem] = useState<SolicitudParametro | null>(null);
+  
+  const [paramEstado, setParamEstado] = useState<ParametrosEstado | null>(null);
+  const [availableTipos, setAvailableTipos] = useState<string[]>(["Historia Clinica", "Enfermeria", "Otros"]);
+
+  const fetchParamEstado = () => {
+    api<ParametrosEstado>("/parametros-clinicos/estado").then(setParamEstado).catch(() => {});
+  };
+
+  const fetchTipos = () => {
+    api<string[]>("/parametros-clinicos/tipos").then(setAvailableTipos).catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchParamEstado();
+    fetchTipos();
+  }, []);
+
   const isOtros = form.tipoParametro === "Otros";
-  const requiresDates = !isOtros;
+  const isEnfermeria = form.tipoParametro === "Enfermeria";
+  const isHistoriaClinica = form.tipoParametro === "Historia Clinica";
   const descriptionLength = form.descripcion.trim().length;
   const minDescriptionMet = !isOtros || descriptionLength >= 50;
   const parsedApertura = form.fechaApertura ? new Date(`${form.fechaApertura}T00:00:00`) : null;
   const parsedCierre = form.fechaCierre ? new Date(`${form.fechaCierre}T00:00:00`) : null;
   const dateRangeValid =
-    !requiresDates ||
+    !form.fechaApertura ||
+    !form.fechaCierre ||
     (parsedApertura !== null && parsedCierre !== null && parsedCierre.getTime() >= parsedApertura.getTime());
 
+  const datesValid = isOtros
+    ? (form.fechaApertura.trim() !== "" && form.horaApertura.trim() !== "" && dateRangeValid)
+    : (form.fechaApertura.trim() !== "" && form.fechaCierre.trim() !== "" && dateRangeValid);
+
   const totalPreview = (() => {
-    if (!requiresDates || !parsedApertura || !parsedCierre || !dateRangeValid) return null;
+    if (isOtros || !parsedApertura || !parsedCierre || !dateRangeValid) return null;
     const msPerDay = 1000 * 60 * 60 * 24;
     const diffDays = Math.floor((parsedCierre.getTime() - parsedApertura.getTime()) / msPerDay) + 1;
     if (form.tipoParametro === "Enfermeria") return `${diffDays * 24} hr`;
@@ -356,11 +530,11 @@ function SolicitudParametroSection({
     return `${item.totalValor} ${item.totalUnidad}`;
   };
 
-  const canSubmit =
-    form.descripcion.trim() &&
-    minDescriptionMet &&
-    form.solicitante.trim() &&
-    (!requiresDates || (form.fechaApertura && form.fechaCierre && dateRangeValid));
+  const extraFieldsValid = () => {
+    if (isHistoriaClinica) return form.ingreso.trim() !== "" && form.medico.trim() !== "";
+    if (isEnfermeria) return form.ingreso.trim() !== "";
+    return true;
+  };
 
   useEffect(() => {
     let active = true;
@@ -379,17 +553,60 @@ function SolicitudParametroSection({
     return () => { active = false; };
   }, [setSolicitudes]);
 
+  const [colFilters, setColFilters] = useState({
+    consecutivo: "",
+    tipo: "",
+    solicitante: "",
+    area: "",
+    estado: "",
+  });
+
+  const filteredSolicitudes = solicitudes.filter((item) => {
+    const matchConsecutivo = !colFilters.consecutivo || (item.consecutivo || "").toLowerCase().includes(colFilters.consecutivo.toLowerCase());
+    const matchTipo = !colFilters.tipo || (item.tipoParametro || "").toLowerCase().includes(colFilters.tipo.toLowerCase());
+    const matchSolicitante = !colFilters.solicitante || (item.solicitante || "").toLowerCase().includes(colFilters.solicitante.toLowerCase());
+    const matchArea = !colFilters.area || (item.area || "").toLowerCase().includes(colFilters.area.toLowerCase());
+    const matchEstado = !colFilters.estado || (item.estado || "").toLowerCase() === colFilters.estado.toLowerCase();
+    return matchConsecutivo && matchTipo && matchSolicitante && matchArea && matchEstado;
+  });
+
   const handleSave = () => {
-    if (!canSubmit) return;
+    setFormError(null);
+    if (!form.descripcion.trim() || (isOtros && form.descripcion.trim().length < 50)) {
+      setFormError("El campo descripcion es obligatorio, sin una descripcion valida el parametro procedera a ser rechazado");
+      return;
+    }
+    if (!form.solicitante.trim()) {
+      setFormError("El solicitante es obligatorio.");
+      return;
+    }
+    if (!form.area.trim()) {
+      setFormError("El área solicitante es obligatoria.");
+      return;
+    }
+    if (!extraFieldsValid()) {
+      setFormError(isHistoriaClinica ? "Para Historia Clínica es obligatorio el ingreso y el médico." : "Para Enfermería es obligatorio el ingreso.");
+      return;
+    }
+    if (!datesValid) {
+      setFormError("Verifique las fechas y horas registradas.");
+      return;
+    }
+
     setSaving(true);
     api<ApiSolicitudParametro>("/solicitud-parametro/", {
       method: "POST",
       body: JSON.stringify({
         tipo_parametro: form.tipoParametro,
         descripcion: form.descripcion.trim(),
-        fecha_apertura: requiresDates ? form.fechaApertura : null,
-        fecha_cierre: requiresDates ? form.fechaCierre : null,
+        fecha_apertura: form.fechaApertura ? form.fechaApertura : null,
+        fecha_cierre: form.fechaCierre ? form.fechaCierre : null,
+        hora_apertura: isOtros && form.horaApertura ? form.horaApertura : null,
+        hora_cierre: isOtros && form.horaCierre ? form.horaCierre : null,
         solicitante: form.solicitante.trim(),
+        area: form.area.trim(),
+        ingreso: (isEnfermeria || isHistoriaClinica) ? form.ingreso.trim() : null,
+        medico: isHistoriaClinica ? form.medico.trim() : null,
       }),
     })
       .then((created) => {
@@ -399,7 +616,12 @@ function SolicitudParametroSection({
           descripcion: "",
           fechaApertura: "",
           fechaCierre: "",
+          horaApertura: "",
+          horaCierre: "",
           solicitante: "",
+          area: "",
+          ingreso: "",
+          medico: "",
         });
         setOpen(false);
       })
@@ -409,17 +631,27 @@ function SolicitudParametroSection({
       .finally(() => setSaving(false));
   };
 
-  const handleApprove = (id: number) => {
-    api<ApiSolicitudParametro>(`/solicitud-parametro/${id}/aprobar`, {
-      method: "PUT",
+  const handleResolutionSuccess = (updated: SolicitudParametro) => {
+    setSolicitudes((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+    fetchParamEstado();
+  };
+
+  const handleResetParametrosDefecto = () => {
+    if (!window.confirm("¿Desea restablecer todos los parámetros clínicos a los valores por defecto configurados?")) {
+      return;
+    }
+    setResettingDefecto(true);
+    api<{ message: string }>("/parametros-clinicos/restablecer-defecto", {
+      method: "POST",
     })
-      .then((updated) => {
-        const row = toSolicitudParametro(updated);
-        setSolicitudes((prev) => prev.map((item) => (item.id === id ? row : item)));
+      .then((res) => {
+        fetchParamEstado();
+        toast.success(res.message || "Parámetros restablecidos por defecto correctamente");
       })
-      .catch((error) => {
-        onError(error instanceof Error ? error.message : "No fue posible aprobar la solicitud.");
-      });
+      .catch((e) => {
+        onError(e instanceof Error ? e.message : "Error restableciendo los parámetros por defecto");
+      })
+      .finally(() => setResettingDefecto(false));
   };
 
   const handleViewDetail = (item: SolicitudParametro) => {
@@ -429,66 +661,147 @@ function SolicitudParametroSection({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <SectionHeader
-          title="Solicitud Parámetro"
-          subtitle="Cree y revise solicitudes de parámetros para soporte clínico."
+          title="Habilitación de Parámetro"
+          subtitle="Cree y gestione solicitudes de parámetros para soporte clínico."
         />
-        <Btn v="primary" onClick={() => setOpen(true)}>
-          <Plus size={14} /> Nueva Solicitud
-        </Btn>
+        <div className="flex flex-wrap items-center gap-3">
+          {paramEstado && (
+            <div className="flex flex-wrap items-center gap-2">
+              <ParametroBadge title="Enfermeria" abierto={paramEstado.enfermeria_abierto} valor={paramEstado.enfermeria_hcrenf} valor2={paramEstado.enfermeria_haplmed} />
+              <ParametroBadge title="Historia Clinica" abierto={paramEstado.historia_clinica_abierto} valor={paramEstado.historia_clinica_valor} />
+            </div>
+          )}
+          {canHabilitarParametro && (
+            <Btn v="secondary" onClick={handleResetParametrosDefecto} disabled={resettingDefecto}>
+              <RotateCcw size={14} className={resettingDefecto ? "animate-spin" : ""} />
+              Restablecer Valores por Defecto
+            </Btn>
+          )}
+          <Btn v="primary" onClick={() => { fetchTipos(); setOpen(true); }}>
+            <Plus size={14} /> Nueva Solicitud
+          </Btn>
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
         <div className="rounded-3xl border border-[#0778ac]/15 bg-[#0778ac]/5 p-5">
           <p className="text-xs uppercase tracking-[0.22em] text-[#0778ac]/70">Solicitudes</p>
           <p className="mt-3 text-3xl font-semibold text-slate-900">{solicitudes.length}</p>
-          <p className="mt-2 text-sm text-slate-500">Total de solicitudes registradas.</p>
+          <p className="mt-2 text-xs text-slate-500">Total registradas.</p>
         </div>
-        <div className="rounded-3xl border border-slate-200 bg-white p-5">
-          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Pendientes</p>
-          <p className="mt-3 text-3xl font-semibold text-slate-900">{solicitudes.filter((s) => s.estado === "Pendiente").length}</p>
-          <p className="mt-2 text-sm text-slate-500">Solicitudes en espera de revisión.</p>
+        <div className="rounded-3xl border border-amber-200 bg-amber-50/50 p-5">
+          <p className="text-xs uppercase tracking-[0.22em] text-amber-700">Pendientes</p>
+          <p className="mt-3 text-3xl font-semibold text-amber-900">{solicitudes.filter((s) => s.estado === "Pendiente").length}</p>
+          <p className="mt-2 text-xs text-amber-700/80">En espera de revisión.</p>
         </div>
-        <div className="rounded-3xl border border-slate-200 bg-white p-5">
-          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Aprobadas</p>
-          <p className="mt-3 text-3xl font-semibold text-slate-900">{solicitudes.filter((s) => s.estado === "Aprobado").length}</p>
-          <p className="mt-2 text-sm text-slate-500">Solicitudes aprobadas por el coordinador.</p>
+        <div className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-5">
+          <p className="text-xs uppercase tracking-[0.22em] text-emerald-700">Habilitadas</p>
+          <p className="mt-3 text-3xl font-semibold text-emerald-900">{solicitudes.filter((s) => s.estado === "Habilitado" || s.estado === "Aprobado").length}</p>
+          <p className="mt-2 text-xs text-emerald-700/80">Habilitadas activas.</p>
+        </div>
+        <div className="rounded-3xl border border-red-200 bg-red-50/50 p-5">
+          <p className="text-xs uppercase tracking-[0.22em] text-red-700">Rechazadas</p>
+          <p className="mt-3 text-3xl font-semibold text-red-900">{solicitudes.filter((s) => s.estado === "Rechazado").length}</p>
+          <p className="mt-2 text-xs text-red-700/80">Solicitudes rechazadas.</p>
+        </div>
+        <div className="rounded-3xl border border-indigo-200 bg-indigo-50/50 p-5 col-span-2 md:col-span-1">
+          <p className="text-xs uppercase tracking-[0.22em] text-indigo-700">Sol. Previa</p>
+          <p className="mt-3 text-3xl font-semibold text-indigo-900">{solicitudes.filter((s) => s.estado === "Autorizado Solicitud Previa").length}</p>
+          <p className="mt-2 text-xs text-indigo-700/80">Autorizadas bajo sol. previa.</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-x-auto max-h-[600px] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              {["Tipo de Parámetro", "Solicitante", "Apertura", "Cierre", "Total", "Estado", "Acciones"].map((heading) => (
+              {["Consecutivo", "Tipo de Parámetro", "Solicitante", "Área", "Apertura", "Cierre", "Total", "Estado", "Acciones"].map((heading) => (
                 <th
                   key={heading}
-                  className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider"
+                  className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50"
                 >
                   {heading}
                 </th>
               ))}
             </tr>
+            <tr className="bg-slate-100/90 border-t border-slate-200">
+              <th className="px-2 py-1.5 bg-slate-100 font-normal">
+                <input
+                  type="text"
+                  placeholder="Filtrar..."
+                  value={colFilters.consecutivo}
+                  onChange={(e) => setColFilters({ ...colFilters, consecutivo: e.target.value })}
+                  className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-normal bg-white"
+                />
+              </th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal">
+                <input
+                  type="text"
+                  placeholder="Filtrar..."
+                  value={colFilters.tipo}
+                  onChange={(e) => setColFilters({ ...colFilters, tipo: e.target.value })}
+                  className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-normal bg-white"
+                />
+              </th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal">
+                <input
+                  type="text"
+                  placeholder="Filtrar..."
+                  value={colFilters.solicitante}
+                  onChange={(e) => setColFilters({ ...colFilters, solicitante: e.target.value })}
+                  className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-normal bg-white"
+                />
+              </th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal">
+                <input
+                  type="text"
+                  placeholder="Filtrar..."
+                  value={colFilters.area}
+                  onChange={(e) => setColFilters({ ...colFilters, area: e.target.value })}
+                  className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-normal bg-white"
+                />
+              </th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal">
+                <select
+                  value={colFilters.estado}
+                  onChange={(e) => setColFilters({ ...colFilters, estado: e.target.value })}
+                  className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-normal bg-white"
+                >
+                  <option value="">Todos</option>
+                  <option value="Pendiente">Pendiente</option>
+                  <option value="Habilitado">Habilitado</option>
+                  <option value="Rechazado">Rechazado</option>
+                  <option value="Autorizado Solicitud Previa">Sol. Previa</option>
+                </select>
+              </th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
+            </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-slate-400 text-sm">
+                  <td colSpan={9} className="px-4 py-10 text-center text-slate-400 text-sm">
                     Cargando solicitudes...
                   </td>
                 </tr>
-              ) : solicitudes.length === 0 ? (
+              ) : filteredSolicitudes.length === 0 ? (
               <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-slate-400 text-sm">
+                  <td colSpan={9} className="px-4 py-10 text-center text-slate-400 text-sm">
                   No hay solicitudes registradas.
                 </td>
               </tr>
               ) : (
-              solicitudes.map((item) => (
+              filteredSolicitudes.map((item) => (
                 <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="px-4 py-3 text-xs font-semibold text-[#0778ac]">{item.tipoParametro}</td>
+                  <td className="px-4 py-3 text-xs font-bold text-[#0778ac] font-mono">{item.consecutivo}</td>
+                  <td className="px-4 py-3 text-xs font-semibold text-slate-800">{item.tipoParametro}</td>
                   <td className="px-4 py-3 text-slate-700">{item.solicitante}</td>
+                  <td className="px-4 py-3 text-slate-600 text-xs">{item.area || "—"}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs font-mono">{item.fechaApertura || "—"}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs font-mono">{item.fechaCierre || "—"}</td>
                   <td className="px-4 py-3 text-slate-700 text-xs font-semibold">{formatTotal(item)}</td>
@@ -496,18 +809,31 @@ function SolicitudParametroSection({
                     <StatusBadge estado={item.estado} />
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <Btn v="secondary" sm onClick={() => handleViewDetail(item)}>
                         Consultar
                       </Btn>
-                      {canApprove && (
-                        item.estado === "Aprobado" ? (
-                          <span className="text-xs text-slate-500 self-center">Aprobada</span>
-                        ) : (
-                          <Btn v="primary" sm onClick={() => handleApprove(item.id)}>
-                            Aprobar
-                          </Btn>
-                        )
+                      {canApprove && item.estado === "Pendiente" && (
+                        <>
+                          <button
+                            onClick={() => { setHabilitarModalItem(item); setHabilitarModalOpen(true); }}
+                            className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm"
+                          >
+                            Habilitar
+                          </button>
+                          <button
+                            onClick={() => { setRechazarModalItem(item); setRechazarModalOpen(true); }}
+                            className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors shadow-sm"
+                          >
+                            Rechazar
+                          </button>
+                          <button
+                            onClick={() => { setExtensionModalItem(item); setExtensionModalOpen(true); }}
+                            className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shadow-sm"
+                          >
+                            Autorizado Solicitud Previa
+                          </button>
+                        </>
                       )}
                     </div>
                   </td>
@@ -518,8 +844,51 @@ function SolicitudParametroSection({
         </table>
       </div>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Nueva Solicitud de Parámetro" size="md">
+      <HabilitarParametroModal 
+        open={coordModalOpen} 
+        onClose={() => setCoordModalOpen(false)} 
+        onRefresh={fetchParamEstado}
+        onError={onError}
+      />
+
+      <HabilitarSolicitudModal
+        solicitud={habilitarModalItem}
+        open={habilitarModalOpen}
+        onClose={() => { setHabilitarModalOpen(false); setHabilitarModalItem(null); }}
+        onSuccess={handleResolutionSuccess}
+        onError={onError}
+      />
+
+      <RechazarSolicitudModal
+        solicitud={rechazarModalItem}
+        open={rechazarModalOpen}
+        onClose={() => { setRechazarModalOpen(false); setRechazarModalItem(null); }}
+        onSuccess={handleResolutionSuccess}
+        onError={onError}
+      />
+
+      <AutorizadoPreviaSolicitudModal
+        solicitud={extensionModalItem}
+        solicitudes={solicitudes}
+        open={extensionModalOpen}
+        onClose={() => { setExtensionModalOpen(false); setExtensionModalItem(null); }}
+        onSuccess={handleResolutionSuccess}
+        onError={onError}
+      />
+
+      <Modal open={open} onClose={() => { setOpen(false); setFormError(null); }} title="Nueva Solicitud de Parámetro" size="md">
         <div className="space-y-4">
+          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700 shadow-sm">
+            <AlertCircle size={16} className="shrink-0 text-red-600" />
+            <span>Sin una justificacion valida, parametro no sera habilitado</span>
+          </div>
+
+          {formError && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <AlertCircle size={16} className="mt-0.5 shrink-0 text-amber-500" />
+              <p className="leading-snug">{formError}</p>
+            </div>
+          )}
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Tipo de parámetro</label>
@@ -530,19 +899,19 @@ function SolicitudParametroSection({
                   setForm((prev) => ({
                     ...prev,
                     tipoParametro: nextType,
-                    fechaApertura: nextType === "Otros" ? "" : prev.fechaApertura,
-                    fechaCierre: nextType === "Otros" ? "" : prev.fechaCierre,
+                    ingreso: nextType === "Otros" ? "" : prev.ingreso,
+                    medico: nextType !== "Historia Clinica" ? "" : prev.medico,
                   }));
                 }}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
               >
-                <option value="Enfermeria">Enfermería</option>
-                <option value="Historia Clinica">Historia Clínica</option>
-                <option value="Otros">Otros</option>
+                {availableTipos.includes("Enfermeria") && <option value="Enfermeria">Enfermería</option>}
+                {availableTipos.includes("Historia Clinica") && <option value="Historia Clinica">Historia Clínica</option>}
+                {availableTipos.includes("Otros") && <option value="Otros">Otros</option>}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Solicitante</label>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Solicitante *</label>
               <input
                 value={form.solicitante}
                 onChange={(e) => setForm({ ...form, solicitante: e.target.value })}
@@ -550,11 +919,46 @@ function SolicitudParametroSection({
               />
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Descripción</label>
+
+          <div className="border-t border-slate-100 pt-3">
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Área *</label>
+            <input
+              value={form.area}
+              onChange={(e) => setForm({ ...form, area: e.target.value })}
+              placeholder="Ingrese el área solicitante"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+            />
+          </div>
+
+          {(isEnfermeria || isHistoriaClinica) && (
+             <div className="grid gap-4 md:grid-cols-2 border-t border-slate-100 pt-3">
+               <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Ingreso *</label>
+                  <input
+                    value={form.ingreso}
+                    onChange={(e) => setForm({ ...form, ingreso: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+                  />
+               </div>
+               {isHistoriaClinica && (
+                 <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Médico *</label>
+                    <input
+                      value={form.medico}
+                      onChange={(e) => setForm({ ...form, medico: e.target.value })}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+                    />
+                 </div>
+               )}
+             </div>
+          )}
+
+          <div className="border-t border-slate-100 pt-3">
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Descripción *</label>
             <textarea
               value={form.descripcion}
               onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
+              placeholder="Ingrese la descripción detallada de la solicitud..."
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac] resize-none min-h-[140px]"
             />
             {isOtros && (
@@ -565,34 +969,62 @@ function SolicitudParametroSection({
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Fecha de apertura</label>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                Fecha de apertura *
+              </label>
               <input
                 type="date"
                 value={form.fechaApertura}
                 onChange={(e) => setForm({ ...form, fechaApertura: e.target.value })}
-                disabled={!requiresDates}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac] disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Fecha de cierre</label>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                Fecha de cierre {isOtros ? <span className="normal-case text-slate-400 font-normal">(Opcional)</span> : "*"}
+              </label>
               <input
                 type="date"
                 value={form.fechaCierre}
                 onChange={(e) => setForm({ ...form, fechaCierre: e.target.value })}
-                disabled={!requiresDates}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac] disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
               />
             </div>
           </div>
-          {requiresDates && !dateRangeValid && form.fechaApertura && form.fechaCierre && (
+          {isOtros && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                  Hora de inicio *
+                </label>
+                <input
+                  type="time"
+                  value={form.horaApertura}
+                  onChange={(e) => setForm({ ...form, horaApertura: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                  Hora final <span className="normal-case text-slate-400 font-normal">(Opcional)</span>
+                </label>
+                <input
+                  type="time"
+                  value={form.horaCierre}
+                  onChange={(e) => setForm({ ...form, horaCierre: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+                />
+              </div>
+            </div>
+          )}
+          {!dateRangeValid && form.fechaApertura && form.fechaCierre && (
             <p className="text-xs text-rose-600">La fecha de cierre no puede ser menor que la fecha de apertura.</p>
           )}
-          {requiresDates && totalPreview && (
+          {!isOtros && totalPreview && (
             <p className="text-xs text-slate-600">Total calculado: <span className="font-semibold text-slate-900">{totalPreview}</span></p>
           )}
           <div className="flex gap-2 pt-2 border-t border-slate-100">
-            <Btn v="primary" onClick={handleSave} disabled={!canSubmit || saving}>
+            <Btn v="primary" onClick={handleSave} disabled={saving}>
               Guardar solicitud
             </Btn>
             <Btn v="secondary" onClick={() => setOpen(false)}>
@@ -615,6 +1047,10 @@ function SolicitudParametroSection({
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="rounded-xl border border-slate-200 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-slate-400">Consecutivo</p>
+                <p className="font-bold text-[#0778ac] mt-1 font-mono">{selectedSolicitud.consecutivo}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3">
                 <p className="text-[11px] uppercase tracking-wider text-slate-400">Tipo de parámetro</p>
                 <p className="font-semibold text-slate-800 mt-1">{selectedSolicitud.tipoParametro}</p>
               </div>
@@ -623,12 +1059,20 @@ function SolicitudParametroSection({
                 <p className="font-semibold text-slate-800 mt-1">{selectedSolicitud.solicitante}</p>
               </div>
               <div className="rounded-xl border border-slate-200 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-slate-400">Área</p>
+                <p className="font-semibold text-slate-800 mt-1">{selectedSolicitud.area || "—"}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3">
                 <p className="text-[11px] uppercase tracking-wider text-slate-400">Apertura</p>
-                <p className="font-semibold text-slate-800 mt-1">{selectedSolicitud.fechaApertura || "—"}</p>
+                <p className="font-semibold text-slate-800 mt-1">
+                  {selectedSolicitud.fechaApertura || "—"} {selectedSolicitud.horaApertura ? `(${selectedSolicitud.horaApertura})` : ""}
+                </p>
               </div>
               <div className="rounded-xl border border-slate-200 p-3">
                 <p className="text-[11px] uppercase tracking-wider text-slate-400">Cierre</p>
-                <p className="font-semibold text-slate-800 mt-1">{selectedSolicitud.fechaCierre || "—"}</p>
+                <p className="font-semibold text-slate-800 mt-1">
+                  {selectedSolicitud.fechaCierre || "—"} {selectedSolicitud.horaCierre ? `(${selectedSolicitud.horaCierre})` : ""}
+                </p>
               </div>
               <div className="rounded-xl border border-slate-200 p-3">
                 <p className="text-[11px] uppercase tracking-wider text-slate-400">Total</p>
@@ -639,6 +1083,28 @@ function SolicitudParametroSection({
                 <div className="mt-1"><StatusBadge estado={selectedSolicitud.estado} /></div>
               </div>
             </div>
+
+            {selectedSolicitud.motivoRechazo && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-red-500 font-semibold">Motivo de Rechazo</p>
+                <p className="text-sm text-red-800 mt-1 whitespace-pre-wrap">{selectedSolicitud.motivoRechazo}</p>
+              </div>
+            )}
+
+            {selectedSolicitud.solicitudExtension && (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-indigo-500 font-semibold">Autorizado bajo la solicitud previa</p>
+                <p className="text-sm text-indigo-800 mt-1 font-bold">{selectedSolicitud.solicitudExtension}</p>
+              </div>
+            )}
+
+            {selectedSolicitud.observacionResolucion && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Observación de Resolución</p>
+                <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{selectedSolicitud.observacionResolucion}</p>
+              </div>
+            )}
+
             <div className="rounded-xl border border-slate-200 p-3">
               <p className="text-[11px] uppercase tracking-wider text-slate-400">Fecha de registro</p>
               <p className="font-semibold text-slate-800 mt-1">{new Date(selectedSolicitud.fechaRegistro).toLocaleString("es-CO")}</p>
@@ -662,15 +1128,629 @@ function SolicitudParametroSection({
   );
 }
 
+// ─── Parametros Config Section ────────────────────────────────────────────────
+
+function ParametrosConfigSection({
+  onError,
+}: {
+  onError: (msg: string) => void;
+}) {
+  const [config, setConfig] = useState<ConfiguracionParametrosDTO>({
+    hc_default: 30,
+    enf_hcrenf_default: 48,
+    enf_haplmed_default: 48,
+    hora_restablecimiento: "20:05",
+    auto_restablecer: true,
+    tipos_habilitados: ["Historia Clinica", "Enfermeria", "Otros"],
+    correos_historia_clinica: "",
+    correos_enfermeria: "",
+    correos_otros: "",
+  });
+  const [loading, setLoading] = useState(true);
+  const [savingDefaults, setSavingDefaults] = useState(false);
+  const [savingHora, setSavingHora] = useState(false);
+  const [savingTipos, setSavingTipos] = useState(false);
+  const [savingCorreos, setSavingCorreos] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  const fetchConfig = () => {
+    api<ConfiguracionParametrosDTO>("/parametros-clinicos/config")
+      .then((data) => {
+        setConfig(data);
+      })
+      .catch((err) => {
+        onError(err instanceof Error ? err.message : "Error cargando configuración de parámetros");
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchConfig();
+  }, []);
+
+  const handleSaveDefaults = () => {
+    setSavingDefaults(true);
+    api<ConfiguracionParametrosDTO>("/parametros-clinicos/config", {
+      method: "PUT",
+      body: JSON.stringify(config),
+    })
+      .then((data) => {
+        setConfig(data);
+        toast.success("Valores por defecto guardados correctamente.");
+      })
+      .catch((e) => {
+        onError(e instanceof Error ? e.message : "Error guardando valores por defecto");
+      })
+      .finally(() => setSavingDefaults(false));
+  };
+
+  const handleSaveHora = () => {
+    setSavingHora(true);
+    api<ConfiguracionParametrosDTO>("/parametros-clinicos/config", {
+      method: "PUT",
+      body: JSON.stringify(config),
+    })
+      .then((data) => {
+        setConfig(data);
+        toast.success("Hora de restablecimiento automático programada correctamente.");
+      })
+      .catch((e) => {
+        onError(e instanceof Error ? e.message : "Error guardando hora de restablecimiento");
+      })
+      .finally(() => setSavingHora(false));
+  };
+
+  const handleSaveCorreos = () => {
+    setSavingCorreos(true);
+    api<ConfiguracionParametrosDTO>("/parametros-clinicos/config", {
+      method: "PUT",
+      body: JSON.stringify(config),
+    })
+      .then((data) => {
+        setConfig(data);
+        toast.success("Correos de notificación guardados correctamente.");
+      })
+      .catch((e) => {
+        onError(e instanceof Error ? e.message : "Error guardando correos de notificación");
+      })
+      .finally(() => setSavingCorreos(false));
+  };
+
+  const handleToggleTipo = (tipoName: string) => {
+    const exists = config.tipos_habilitados.includes(tipoName);
+    const updated = exists
+      ? config.tipos_habilitados.filter((t) => t !== tipoName)
+      : [...config.tipos_habilitados, tipoName];
+
+    const nextConfig = { ...config, tipos_habilitados: updated };
+    setConfig(nextConfig);
+
+    setSavingTipos(true);
+    api<ConfiguracionParametrosDTO>("/parametros-clinicos/config", {
+      method: "PUT",
+      body: JSON.stringify(nextConfig),
+    })
+      .then((data) => {
+        setConfig(data);
+        toast.success(`Tipo "${tipoName}" ${exists ? "deshabilitado" : "habilitado"} con éxito.`);
+      })
+      .catch((e) => {
+        onError(e instanceof Error ? e.message : "Error al actualizar tipo de parámetro");
+      })
+      .finally(() => setSavingTipos(false));
+  };
+
+  const handleResetNow = () => {
+    if (!window.confirm("¿Está seguro de restablecer los parámetros clínicos a los valores por defecto en el servidor de base de datos?")) {
+      return;
+    }
+    setResetting(true);
+    api<{ message: string }>("/parametros-clinicos/restablecer-defecto", {
+      method: "POST",
+    })
+      .then((res) => {
+        toast.success(res.message || "Parámetros restablecidos a sus valores por defecto.");
+      })
+      .catch((e) => {
+        onError(e instanceof Error ? e.message : "Error restableciendo los parámetros");
+      })
+      .finally(() => setResetting(false));
+  };
+
+  const allAvailableTypes = [
+    { key: "Historia Clinica", label: "Historia Clínica", desc: "Parámetro HCPDIAAUT (Control de días de autorización de HC)" },
+    { key: "Enfermeria", label: "Enfermería", desc: "Parámetros HCNMHRCRENF y HCNHAPLMED (Control de horas de enfermería)" },
+    { key: "Otros", label: "Otros", desc: "Habilitación general con registro de observación y soporte de horas" },
+  ];
+
+  if (loading) {
+    return (
+      <div className="p-8 text-center text-slate-500">
+        Cargando configuración de parámetros...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader
+        title="Parámetros"
+        subtitle="Configuración y parametrización de valores por defecto, horarios, tipos de soporte clínico y correos de notificación."
+      />
+
+      <div className="grid gap-6 md:grid-cols-3">
+        {/* Card 1: Valores por Defecto */}
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+              <div className="p-2 bg-[#0778ac]/10 text-[#0778ac] rounded-xl font-bold">⚙</div>
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">Valores por Defecto</h3>
+                <p className="text-xs text-slate-400">Valores estándar de cierre</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                Historia Clínica (HCPDIAAUT)
+              </label>
+              <input
+                type="number"
+                value={config.hc_default}
+                onChange={(e) => setConfig({ ...config, hc_default: Number(e.target.value) })}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white font-semibold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                Enfermería (HCNMHRCRENF)
+              </label>
+              <input
+                type="number"
+                value={config.enf_hcrenf_default}
+                onChange={(e) => setConfig({ ...config, enf_hcrenf_default: Number(e.target.value) })}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white font-semibold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                Enfermería (HCNHAPLMED)
+              </label>
+              <input
+                type="number"
+                value={config.enf_haplmed_default}
+                onChange={(e) => setConfig({ ...config, enf_haplmed_default: Number(e.target.value) })}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white font-semibold"
+              />
+            </div>
+          </div>
+
+          <div className="pt-5 mt-4 border-t border-slate-100 space-y-2">
+            <button
+              onClick={handleSaveDefaults}
+              disabled={savingDefaults}
+              className="w-full py-2.5 px-4 rounded-xl bg-[#0778ac] hover:bg-[#066591] text-white text-xs font-bold transition-colors shadow-sm disabled:opacity-50"
+            >
+              {savingDefaults ? "Guardando..." : "Guardar Valores por Defecto"}
+            </button>
+            <button
+              onClick={handleResetNow}
+              disabled={resetting}
+              className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              <RotateCcw size={13} /> {resetting ? "Restableciendo..." : "Restablecer Valores Ahora"}
+            </button>
+          </div>
+        </div>
+
+        {/* Card 2: Hora de Restablecimiento Automático */}
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+              <div className="p-2 bg-amber-500/10 text-amber-600 rounded-xl font-bold">⏰</div>
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">Restablecimiento Automático</h3>
+                <p className="text-xs text-slate-400">Programación diaria nocturna</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-200">
+              <span className="text-xs font-semibold text-slate-700">Activar tarea automática</span>
+              <input
+                type="checkbox"
+                checked={config.auto_restablecer}
+                onChange={(e) => setConfig({ ...config, auto_restablecer: e.target.checked })}
+                className="w-5 h-5 accent-[#0778ac] rounded cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                Hora de Restablecimiento Diario (24h)
+              </label>
+              <input
+                type="time"
+                value={config.hora_restablecimiento}
+                onChange={(e) => setConfig({ ...config, hora_restablecimiento: e.target.value })}
+                disabled={!config.auto_restablecer}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white font-semibold disabled:bg-slate-100 disabled:text-slate-400"
+              />
+            </div>
+
+            <div className="p-3.5 bg-blue-50 border border-blue-100 rounded-2xl text-xs text-blue-800 leading-relaxed">
+              <strong>Nota:</strong> Todos los días a la hora configurada (<strong>{config.hora_restablecimiento}</strong>), el sistema verificará automáticamente el servidor y restablecerá los parámetros que se encuentren abiertos.
+            </div>
+          </div>
+
+          <div className="pt-5 mt-4 border-t border-slate-100">
+            <button
+              onClick={handleSaveHora}
+              disabled={savingHora}
+              className="w-full py-2.5 px-4 rounded-xl bg-[#0778ac] hover:bg-[#066591] text-white text-xs font-bold transition-colors shadow-sm disabled:opacity-50"
+            >
+              {savingHora ? "Guardando..." : "Guardar Horario"}
+            </button>
+          </div>
+        </div>
+
+        {/* Card 3: Tipos de Parámetros */}
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+              <div className="p-2 bg-emerald-500/10 text-emerald-600 rounded-xl font-bold">📋</div>
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">Tipos de Parámetros</h3>
+                <p className="text-xs text-slate-400">Activar o desactivar módulos</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {allAvailableTypes.map((tipo) => {
+                const isEnabled = config.tipos_habilitados.includes(tipo.key);
+                return (
+                  <div
+                    key={tipo.key}
+                    className={`p-3.5 rounded-2xl border transition-all ${
+                      isEnabled ? "bg-emerald-50/50 border-emerald-200" : "bg-slate-50 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">{tipo.label}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleTipo(tipo.key)}
+                        disabled={savingTipos}
+                        className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
+                          isEnabled
+                            ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                            : "bg-slate-300 hover:bg-slate-400 text-slate-700"
+                        }`}
+                      >
+                        {isEnabled ? "Habilitado" : "Deshabilitado"}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1">{tipo.desc}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-[11px] text-slate-500 text-center mt-4">
+            Solo los tipos habilitados se mostrarán en el formulario de nuevas solicitudes.
+          </div>
+        </div>
+
+        {/* Card 4: Correos de Notificación por Tipo */}
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between md:col-span-3">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+              <div className="p-2 bg-indigo-500/10 text-indigo-600 rounded-xl font-bold">✉</div>
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">Correos Electrónicos de Notificación por Tipo de Parámetro</h3>
+                <p className="text-xs text-slate-400">Ingrese las direcciones de correo separadas por comas para cada tipo de parámetro.</p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                  Correos - Historia Clínica
+                </label>
+                <textarea
+                  value={config.correos_historia_clinica || ""}
+                  onChange={(e) => setConfig({ ...config, correos_historia_clinica: e.target.value })}
+                  placeholder="ejemplo1@empresa.com, ejemplo2@empresa.com"
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                  Correos - Enfermería
+                </label>
+                <textarea
+                  value={config.correos_enfermeria || ""}
+                  onChange={(e) => setConfig({ ...config, correos_enfermeria: e.target.value })}
+                  placeholder="ejemplo1@empresa.com, ejemplo2@empresa.com"
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                  Correos - Tipo Otros
+                </label>
+                <textarea
+                  value={config.correos_otros || ""}
+                  onChange={(e) => setConfig({ ...config, correos_otros: e.target.value })}
+                  placeholder="ejemplo1@empresa.com, ejemplo2@empresa.com"
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white font-mono"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 mt-4 border-t border-slate-100 flex justify-end">
+            <button
+              onClick={handleSaveCorreos}
+              disabled={savingCorreos}
+              className="py-2.5 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+            >
+              {savingCorreos ? "Guardando..." : "Guardar Correos de Notificación"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Auditoria Section ────────────────────────────────────────────────────────
+
+interface AuditLogItem {
+  oid: number;
+  fecha_hora: string;
+  tipo_accion: string;
+  ip_equipo: string;
+  modulo: string;
+  usuario: string;
+  detalle?: string | null;
+}
+
+function AuditoriaSection() {
+  const [logs, setLogs] = useState<AuditLogItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({
+    tipo_accion: "",
+    ip_equipo: "",
+    modulo: "",
+    usuario: "",
+    fecha_inicio: "",
+    fecha_fin: "",
+  });
+
+  const fetchLogs = () => {
+    setLoading(true);
+    const queryParams = new URLSearchParams();
+    if (filters.tipo_accion) queryParams.append("tipo_accion", filters.tipo_accion);
+    if (filters.ip_equipo) queryParams.append("ip_equipo", filters.ip_equipo);
+    if (filters.modulo) queryParams.append("modulo", filters.modulo);
+    if (filters.usuario) queryParams.append("usuario", filters.usuario);
+    if (filters.fecha_inicio) queryParams.append("fecha_inicio", filters.fecha_inicio);
+    if (filters.fecha_fin) queryParams.append("fecha_fin", filters.fecha_fin);
+
+    api<AuditLogItem[]>(`/auditoria/?${queryParams.toString()}`)
+      .then(setLogs)
+      .catch(() => setLogs([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchLogs();
+  }, []);
+
+  const handleExportExcel = () => {
+    const queryParams = new URLSearchParams();
+    if (filters.tipo_accion) queryParams.append("tipo_accion", filters.tipo_accion);
+    if (filters.ip_equipo) queryParams.append("ip_equipo", filters.ip_equipo);
+    if (filters.modulo) queryParams.append("modulo", filters.modulo);
+    if (filters.usuario) queryParams.append("usuario", filters.usuario);
+    if (filters.fecha_inicio) queryParams.append("fecha_inicio", filters.fecha_inicio);
+    if (filters.fecha_fin) queryParams.append("fecha_fin", filters.fecha_fin);
+
+    window.open(`/api/v1/auditoria/exportar-excel?${queryParams.toString()}`, "_blank");
+  };
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader
+        title="Auditoría de Acciones del Sistema"
+        subtitle="Consulte el historial completo de acciones (GET, POST, PUT, DELETE, OPTIONS) registradas en la aplicación."
+      />
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6 items-end bg-slate-50 p-4 rounded-xl border border-slate-200">
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Acción (HTTP)</label>
+            <select
+              value={filters.tipo_accion}
+              onChange={(e) => setFilters({ ...filters, tipo_accion: e.target.value })}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
+            >
+              <option value="">Todas</option>
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="DELETE">DELETE</option>
+              <option value="OPTIONS">OPTIONS</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">IP del Equipo</label>
+            <input
+              type="text"
+              value={filters.ip_equipo}
+              onChange={(e) => setFilters({ ...filters, ip_equipo: e.target.value })}
+              placeholder="Ej: 192.168.1.1"
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Módulo</label>
+            <input
+              type="text"
+              value={filters.modulo}
+              onChange={(e) => setFilters({ ...filters, modulo: e.target.value })}
+              placeholder="Ej: Versiones"
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Usuario</label>
+            <input
+              type="text"
+              value={filters.usuario}
+              onChange={(e) => setFilters({ ...filters, usuario: e.target.value })}
+              placeholder="Ej: Coordinador"
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Desde</label>
+            <input
+              type="date"
+              value={filters.fecha_inicio}
+              onChange={(e) => setFilters({ ...filters, fecha_inicio: e.target.value })}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <Btn v="primary" sm onClick={fetchLogs} className="flex-1 justify-center">
+              Filtrar
+            </Btn>
+            <Btn v="success" sm onClick={handleExportExcel} className="flex-1 justify-center">
+              <Download size={13} /> Excel
+            </Btn>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto max-h-[600px] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+              <tr>
+                {["#", "Fecha y Hora", "Acción", "Módulo", "Usuario", "IP del Equipo", "Detalle"].map((h) => (
+                  <th key={h} className="px-3 py-2.5 text-left font-bold text-slate-500 uppercase tracking-wider bg-slate-50">{h}</th>
+                ))}
+              </tr>
+              <tr className="bg-slate-100/90 border-t border-slate-200">
+                <th className="px-2 py-1 bg-slate-100"></th>
+                <th className="px-2 py-1 bg-slate-100 font-normal">
+                  <input
+                    type="text"
+                    placeholder="Filtrar fecha..."
+                    value={filters.fecha_inicio}
+                    onChange={(e) => setFilters({ ...filters, fecha_inicio: e.target.value })}
+                    className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-normal"
+                  />
+                </th>
+                <th className="px-2 py-1 bg-slate-100 font-normal">
+                  <select
+                    value={filters.tipo_accion}
+                    onChange={(e) => setFilters({ ...filters, tipo_accion: e.target.value })}
+                    className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-normal"
+                  >
+                    <option value="">Todas</option>
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                    <option value="PUT">PUT</option>
+                    <option value="DELETE">DELETE</option>
+                    <option value="OPTIONS">OPTIONS</option>
+                  </select>
+                </th>
+                <th className="px-2 py-1 bg-slate-100 font-normal">
+                  <input
+                    type="text"
+                    placeholder="Filtrar módulo..."
+                    value={filters.modulo}
+                    onChange={(e) => setFilters({ ...filters, modulo: e.target.value })}
+                    className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-normal"
+                  />
+                </th>
+                <th className="px-2 py-1 bg-slate-100 font-normal">
+                  <input
+                    type="text"
+                    placeholder="Filtrar usuario..."
+                    value={filters.usuario}
+                    onChange={(e) => setFilters({ ...filters, usuario: e.target.value })}
+                    className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-normal"
+                  />
+                </th>
+                <th className="px-2 py-1 bg-slate-100 font-normal">
+                  <input
+                    type="text"
+                    placeholder="Filtrar IP..."
+                    value={filters.ip_equipo}
+                    onChange={(e) => setFilters({ ...filters, ip_equipo: e.target.value })}
+                    className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-normal"
+                  />
+                </th>
+                <th className="px-2 py-1 bg-slate-100 font-normal"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {logs.map((log) => {
+                const badgeColor =
+                  log.tipo_accion === "POST" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
+                  log.tipo_accion === "PUT" ? "bg-amber-100 text-amber-800 border-amber-200" :
+                  log.tipo_accion === "DELETE" ? "bg-rose-100 text-rose-800 border-rose-200" :
+                  "bg-slate-100 text-slate-700 border-slate-200";
+                return (
+                  <tr key={log.oid} className="hover:bg-slate-50/70">
+                    <td className="px-3 py-2 text-slate-400 font-mono">#{log.oid}</td>
+                    <td className="px-3 py-2 text-slate-600 font-mono whitespace-nowrap">{log.fecha_hora}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border ${badgeColor}`}>
+                        {log.tipo_accion}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 font-bold text-[#0778ac]">{log.modulo}</td>
+                    <td className="px-3 py-2 text-slate-800">{log.usuario}</td>
+                    <td className="px-3 py-2 font-mono text-slate-600">{log.ip_equipo}</td>
+                    <td className="px-3 py-2 text-slate-600 max-w-md truncate" title={log.detalle || ""}>{log.detalle || "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {!loading && logs.length === 0 && <EmptyState message="No se encontraron registros de auditoría." />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Coordinator Module ───────────────────────────────────────────────────────
 
-type CoordTab = "registro" | "consulta" | "detalles" | "solicitudParametro" | "reporteFirmas" | "reporteDetalles";
+type CoordTab = "registro" | "restaurarDB" | "consulta" | "detalles" | "solicitudParametro" | "parametrosConfig" | "reporteFirmas" | "reporteDetalles" | "solicitudesManuales" | "auditoria";
 
 function CoordinatorModule({
   versions, setVersions, observaciones, setObservaciones, onError,
   selectedSection,
   onSelectSection,
+  loggedUser,
 }: {
+  loggedUser: string;
   versions: Version[];
   setVersions: React.Dispatch<React.SetStateAction<Version[]>>;
   observaciones: Observacion[];
@@ -680,10 +1760,12 @@ function CoordinatorModule({
   onSelectSection: React.Dispatch<React.SetStateAction<CoordTab>>;
 }) {
   const [tab, setTab] = useState<CoordTab>(selectedSection);
-  const [activeSection, setActiveSection] = useState<CoordTab | "reportes" | "documentos">(selectedSection);
+  const [activeSection, setActiveSection] = useState<CoordTab | "reportes" | "documentos" | "solicitudesDropdown">(selectedSection);
+  const [registroOpen, setRegistroOpen] = useState(false);
+  const [solicitudOpen, setSolicitudOpen] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
   const [documentsOpen, setDocumentsOpen] = useState(false);
-  const [documentView, setDocumentView] = useState<"boletines" | "manuales" | null>(null);
+  const [documentView, setDocumentView] = useState<"boletines" | "manuales" | "solicitudesManuales" | null>(null);
   const [solicitudes, setSolicitudes] = useState<SolicitudParametro[]>([]);
 
   useEffect(() => {
@@ -695,17 +1777,12 @@ function CoordinatorModule({
     setTab(section);
     setActiveSection(section);
     onSelectSection(section);
+    setRegistroOpen(false);
+    setSolicitudOpen(false);
     setReportsOpen(false);
     setDocumentsOpen(false);
     setDocumentView(null);
   };
-
-  const navItems: { key: "registro" | "consulta" | "detalles" | "solicitudParametro"; label: string; icon: React.ReactNode }[] = [
-    { key: "registro", label: "Registro de Versión", icon: <Plus size={14} /> },
-    { key: "consulta", label: "Consulta de Versión", icon: <ClipboardList size={14} /> },
-    { key: "detalles", label: "Detalles de Validación", icon: <Eye size={14} /> },
-    { key: "solicitudParametro", label: "Solicitud Parámetro", icon: <ClipboardList size={14} /> },
-  ];
 
   return (
     <div className="flex flex-col h-full">
@@ -713,24 +1790,132 @@ function CoordinatorModule({
         <span className="text-xs font-bold tracking-widest uppercase text-white/90 mr-4 shrink-0">
           COORDINADOR
         </span>
-        {navItems.map((item) => (
+
+        {/* Dropdown Registro */}
+        <div className="relative">
           <button
-            key={item.key}
-            onClick={() => goToSection(item.key)}
+            onClick={() => {
+              setRegistroOpen(!registroOpen);
+              setSolicitudOpen(false);
+              setReportsOpen(false);
+              setDocumentsOpen(false);
+            }}
             className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
-              activeSection === item.key
+              activeSection === "registro" || activeSection === "restaurarDB"
                 ? "border-white text-white bg-white/10"
                 : "border-transparent text-white/85 hover:text-white hover:border-white/60"
             }`}
           >
-            {item.icon}
-            {item.label}
+            <Plus size={14} />
+            Registro
+            <ChevronDown
+              size={12}
+              className={`transition-transform ${registroOpen ? "rotate-180" : ""}`}
+            />
           </button>
-        ))}
+          {registroOpen && (
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-56">
+              <button
+                onClick={() => goToSection("registro")}
+                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                  activeSection === "registro"
+                    ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
+                    : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
+                }`}
+              >
+                Versión
+              </button>
+              <button
+                onClick={() => goToSection("restaurarDB")}
+                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                  activeSection === "restaurarDB"
+                    ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
+                    : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
+                }`}
+              >
+                Restaurar DB
+              </button>
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={() => goToSection("consulta")}
+          className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
+            activeSection === "consulta"
+              ? "border-white text-white bg-white/10"
+              : "border-transparent text-white/85 hover:text-white hover:border-white/60"
+          }`}
+        >
+          <ClipboardList size={14} />
+          Consulta de Versión
+        </button>
+
+        <button
+          onClick={() => goToSection("detalles")}
+          className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
+            activeSection === "detalles"
+              ? "border-white text-white bg-white/10"
+              : "border-transparent text-white/85 hover:text-white hover:border-white/60"
+          }`}
+        >
+          <Eye size={14} />
+          Detalles de Validación
+        </button>
+
+        {/* Dropdown Solicitud de Parámetro */}
         <div className="relative">
           <button
-            onClick={() => { setReportsOpen(!reportsOpen); setDocumentsOpen(false); }}
-            className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 ${
+            onClick={() => {
+              setSolicitudOpen(!solicitudOpen);
+              setRegistroOpen(false);
+              setReportsOpen(false);
+              setDocumentsOpen(false);
+            }}
+            className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
+              activeSection === "solicitudParametro" || activeSection === "parametrosConfig"
+                ? "border-white text-white bg-white/10"
+                : "border-transparent text-white/85 hover:text-white hover:border-white/60"
+            }`}
+          >
+            <ClipboardList size={14} />
+            Solicitud de Parámetro
+            <ChevronDown
+              size={12}
+              className={`transition-transform ${solicitudOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+          {solicitudOpen && (
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-60">
+              <button
+                onClick={() => goToSection("solicitudParametro")}
+                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                  activeSection === "solicitudParametro"
+                    ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
+                    : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
+                }`}
+              >
+                Habilitación de Parámetro
+              </button>
+              <button
+                onClick={() => goToSection("parametrosConfig")}
+                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                  activeSection === "parametrosConfig"
+                    ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
+                    : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
+                }`}
+              >
+                Parámetros
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Dropdown Reportes */}
+        <div className="relative">
+          <button
+            onClick={() => { setReportsOpen(!reportsOpen); setRegistroOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); }}
+            className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
               activeSection === "reportes"
                 ? "border-white text-white bg-white/10"
                 : "border-transparent text-white/85 hover:text-white hover:border-white/60"
@@ -746,13 +1931,13 @@ function CoordinatorModule({
           {reportsOpen && (
             <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-56">
               <button
-                onClick={() => { setTab("reporteFirmas"); setActiveSection("reportes"); setReportsOpen(false); setDocumentsOpen(false); setDocumentView(null); }}
+                onClick={() => { setTab("reporteFirmas"); setActiveSection("reportes"); setReportsOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); setDocumentView(null); }}
                 className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
               >
                 Reporte de Firmas de Directivos
               </button>
               <button
-                onClick={() => { setTab("reporteDetalles"); setActiveSection("reportes"); setReportsOpen(false); setDocumentsOpen(false); setDocumentView(null); }}
+                onClick={() => { setTab("reporteDetalles"); setActiveSection("reportes"); setReportsOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); setDocumentView(null); }}
                 className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
               >
                 Reporte de Detalles de Validación
@@ -760,11 +1945,13 @@ function CoordinatorModule({
             </div>
           )}
         </div>
+
+        {/* Dropdown Documentos */}
         <div className="relative">
           <button
-            onClick={() => { setDocumentsOpen(!documentsOpen); setReportsOpen(false); }}
+            onClick={() => { setDocumentsOpen(!documentsOpen); setRegistroOpen(false); setReportsOpen(false); setSolicitudOpen(false); }}
             className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
-              activeSection === "documentos"
+              activeSection === "documentos" || activeSection === "solicitudesManuales"
                 ? "border-white text-white bg-white/10"
                 : "border-transparent text-white/85 hover:text-white hover:border-white/60"
             }`}
@@ -777,30 +1964,51 @@ function CoordinatorModule({
             />
           </button>
           {documentsOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-56">
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-60">
               <button
-                onClick={() => { setActiveSection("documentos"); setDocumentView("boletines"); setDocumentsOpen(false); setReportsOpen(false); }}
+                onClick={() => { setActiveSection("documentos"); setDocumentView("boletines"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); }}
                 className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
               >
                 Boletines
               </button>
               <button
-                onClick={() => { setActiveSection("documentos"); setDocumentView("manuales"); setDocumentsOpen(false); setReportsOpen(false); }}
+                onClick={() => { setActiveSection("documentos"); setDocumentView("manuales"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); }}
                 className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
               >
                 Manuales de Usuarios
               </button>
+              <button
+                onClick={() => { goToSection("solicitudesManuales"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); }}
+                className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors border-t border-slate-100"
+              >
+                Solicitudes de manuales
+              </button>
             </div>
           )}
         </div>
+
+        <button
+          onClick={() => goToSection("auditoria")}
+          className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
+            activeSection === "auditoria"
+              ? "border-white text-white bg-white/10"
+              : "border-transparent text-white/85 hover:text-white hover:border-white/60"
+          }`}
+        >
+          <ShieldCheck size={14} />
+          Auditoría
+        </button>
       </nav>
 
       <div className="flex-1 overflow-auto bg-[#f8f9fa] p-6">
         {activeSection === "registro" && (
           <VersionRegistration versions={versions} setVersions={setVersions} onError={onError} />
         )}
+        {activeSection === "restaurarDB" && (
+          <RestaurarDBSection versions={versions} onError={onError} />
+        )}
         {activeSection === "consulta" && (
-          <VersionQuery versions={versions} setVersions={setVersions} onError={onError} />
+          <VersionQuery versions={versions} setVersions={setVersions} onError={onError} loggedUser={loggedUser} />
         )}
         {activeSection === "detalles" && (
           <ValidationDetails versions={versions} observaciones={observaciones} />
@@ -811,24 +2019,34 @@ function CoordinatorModule({
             {documentView === "manuales" && <ManualesUsuarios />}
             {documentView === null && (
               <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center text-slate-500">
-                Seleccione Documentos → Boletines o Manuales de Usuarios.
+                Seleccione Documentos → Boletines, Manuales de Usuarios o Solicitudes de manuales.
               </div>
             )}
           </>
+        )}
+        {activeSection === "solicitudesManuales" && (
+          <SolicitudesManualesSection onError={onError} />
         )}
         {activeSection === "solicitudParametro" && (
           <SolicitudParametroSection
             solicitudes={solicitudes}
             setSolicitudes={setSolicitudes}
             onError={onError}
-            canApprove
+            canApprove={true}
+            canHabilitarParametro={true}
           />
+        )}
+        {activeSection === "parametrosConfig" && (
+          <ParametrosConfigSection onError={onError} />
         )}
         {activeSection === "reportes" && tab === "reporteFirmas" && (
           <ReportFirmas versions={versions} observaciones={observaciones} />
         )}
         {activeSection === "reportes" && tab === "reporteDetalles" && (
           <ReportDetalles versions={versions} observaciones={observaciones} />
+        )}
+        {activeSection === "auditoria" && (
+          <AuditoriaSection />
         )}
       </div>
     </div>
@@ -845,7 +2063,14 @@ function VersionRegistration({
   setVersions: React.Dispatch<React.SetStateAction<Version[]>>;
   onError: (message: string) => void;
 }) {
-  const [form, setForm] = useState({ titulo: "", descripcion: "", enlace: "" });
+  const [form, setForm] = useState({
+    titulo: "",
+    descripcion: "",
+    enlace: "",
+    contenedor_bd: "DGEMPRES99",
+    num_compilacion: "",
+    fecha_compilacion: "",
+  });
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -855,10 +2080,21 @@ function VersionRegistration({
     try {
       const created = await api<ApiVersion>("/versions/", {
         method: "POST",
-        body: JSON.stringify({ ...form, usuario: "Coordinador de Sistemas" }),
+        body: JSON.stringify({
+          ...form,
+          fecha_compilacion: form.fecha_compilacion ? form.fecha_compilacion : null,
+          usuario: "Coordinador de Sistemas",
+        }),
       });
       setVersions((prev) => [toVersion(created), ...prev]);
-      setForm({ titulo: "", descripcion: "", enlace: "" });
+      setForm({
+        titulo: "",
+        descripcion: "",
+        enlace: "",
+        contenedor_bd: "DGEMPRES99",
+        num_compilacion: "",
+        fecha_compilacion: "",
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (error) {
@@ -869,32 +2105,65 @@ function VersionRegistration({
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-3xl">
       <SectionHeader
         title="Registro de Versión del Sistema"
-        subtitle="Complete los datos para registrar una nueva versión de pruebas."
+        subtitle="Complete los datos para registrar una nueva versión del sistema."
       />
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-5">
-        <FormInput
-          label="Título (Versión del Sistema)"
-          required
-          placeholder=""
-          value={form.titulo}
-          onChange={(e) => setForm({ ...form, titulo: e.target.value })}
-        />
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormInput
+            label="Título (Versión del Sistema)"
+            required
+            placeholder="Ej: Versión 2.4.1"
+            value={form.titulo}
+            onChange={(e) => setForm({ ...form, titulo: e.target.value })}
+          />
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Contenedor de Base de Datos</label>
+            <select
+              value={form.contenedor_bd}
+              onChange={(e) => setForm({ ...form, contenedor_bd: e.target.value })}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+            >
+              <option value="DGEMPRES99">DGEMPRES99</option>
+              <option value="DGEMPRES98">DGEMPRES98</option>
+              <option value="DGEMPRES10">DGEMPRES10</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormInput
+            label="Número de compilación"
+            placeholder="Ej: BUILD-2026-08-22"
+            value={form.num_compilacion}
+            onChange={(e) => setForm({ ...form, num_compilacion: e.target.value })}
+          />
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Fecha de compilación</label>
+            <input
+              type="datetime-local"
+              value={form.fecha_compilacion}
+              onChange={(e) => setForm({ ...form, fecha_compilacion: e.target.value })}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+            />
+          </div>
+        </div>
+
         <FormTextarea
           label="Descripción (Detalles de mejoras en la actualización)"
           required
-          rows={5}
-          placeholder=""
+          rows={4}
+          placeholder="Describa los cambios principales..."
           value={form.descripcion}
           onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
         />
         <FormInput
-          label="Enlace (URL de la versión de pruebas)"
+          label="Enlace (URL de la versión)"
           required
           type="url"
-          placeholder=""
+          placeholder="http://..."
           value={form.enlace}
           onChange={(e) => setForm({ ...form, enlace: e.target.value })}
         />
@@ -913,21 +2182,215 @@ function VersionRegistration({
   );
 }
 
+// ─── Restaurar DB Section ──────────────────────────────────────────────────
+
+function RestaurarDBSection({
+  versions,
+  onError,
+}: {
+  versions: Version[];
+  onError: (message: string) => void;
+}) {
+  const [contenedorBd, setContenedorBd] = useState<"DGEMPRES99" | "DGEMPRES98" | "DGEMPRES10">("DGEMPRES99");
+  const [fechaUltimaCopia, setFechaUltimaCopia] = useState("");
+  const [compilacionOid, setCompilacionOid] = useState<number | "">("");
+  const [restauraciones, setRestauraciones] = useState<RestauracionDB[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const fetchRestauraciones = () => {
+    setLoading(true);
+    api<RestauracionDB[]>("/versions/restauraciones")
+      .then(setRestauraciones)
+      .catch((e) => setFormError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchRestauraciones();
+  }, []);
+
+  const handleSave = () => {
+    setFormError(null);
+    if (!fechaUltimaCopia) {
+      setFormError("La fecha de la última copia de la base de datos es obligatoria.");
+      return;
+    }
+    setSaving(true);
+    api<RestauracionDB>("/versions/restauraciones", {
+      method: "POST",
+      body: JSON.stringify({
+        contenedor_bd: contenedorBd,
+        fecha_ultima_copia: fechaUltimaCopia,
+        compilacion_anclada_oid: compilacionOid ? Number(compilacionOid) : null,
+      }),
+    })
+      .then((created) => {
+        setRestauraciones((prev) => [created, ...prev]);
+        setFechaUltimaCopia("");
+        setCompilacionOid("");
+        toast.success("Restauración de base de datos registrada exitosamente.");
+      })
+      .catch((e) => setFormError(e instanceof Error ? e.message : "Error guardando la restauración."))
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <div className="space-y-6 max-w-4xl">
+      <SectionHeader
+        title="Restauración de Base de Datos"
+        subtitle="Registre y consulte los eventos de restauración de base de datos anclados a compilaciones."
+      />
+
+      {formError && (
+        <div className="flex items-center gap-2 p-4 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 text-sm">
+          <AlertCircle size={18} className="text-amber-600 shrink-0" />
+          <span>{formError}</span>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Nuevo Registro de Restauración</h3>
+        
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Contenedor de Base de Datos *</label>
+            <select
+              value={contenedorBd}
+              onChange={(e) => setContenedorBd(e.target.value as any)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+            >
+              <option value="DGEMPRES99">DGEMPRES99</option>
+              <option value="DGEMPRES98">DGEMPRES98</option>
+              <option value="DGEMPRES10">DGEMPRES10</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Fecha y Hora de Restauración (Sistema)</label>
+            <input
+              type="text"
+              readOnly
+              value={new Date().toLocaleString("es-CO")}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 font-mono"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Fecha de la Última Copia de BD *</label>
+            <input
+              type="datetime-local"
+              value={fechaUltimaCopia}
+              onChange={(e) => setFechaUltimaCopia(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Compilación a la que está anclada</label>
+            <select
+              value={compilacionOid}
+              onChange={(e) => setCompilacionOid(e.target.value ? Number(e.target.value) : "")}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+            >
+              <option value="">Seleccione versión/compilación...</option>
+              {versions.map((v) => (
+                <option key={v.id} value={v.oid}>
+                  {v.titulo} {v.num_compilacion ? `(Comp: ${v.num_compilacion})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="pt-2">
+          <Btn v="primary" onClick={handleSave} disabled={saving}>
+            <RotateCcw size={14} /> Registrar Restauración
+          </Btn>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto max-h-[600px] overflow-y-auto">
+        <div className="p-4 border-b border-slate-200 sticky top-0 bg-white z-20">
+          <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Historial de Restauraciones de BD</h4>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200 sticky top-12 z-10">
+            <tr>
+              {["ID", "Contenedor BD", "Fecha Restauración", "Fecha Última Copia BD", "Compilación Anclada", "Usuario"].map((h) => (
+                <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {restauraciones.map((r) => (
+              <tr key={r.oid} className="hover:bg-slate-50/80 transition-colors">
+                <td className="px-4 py-3 font-mono text-xs text-slate-500">#{r.oid}</td>
+                <td className="px-4 py-3 font-bold text-[#0778ac]">{r.contenedor_bd}</td>
+                <td className="px-4 py-3 text-slate-700 font-mono text-xs">{r.fecha_hora_restauracion?.slice(0, 16).replace("T", " ")}</td>
+                <td className="px-4 py-3 text-slate-700 font-mono text-xs">{r.fecha_ultima_copia?.slice(0, 16).replace("T", " ")}</td>
+                <td className="px-4 py-3 text-slate-900 font-medium">{r.compilacion_titulo || "—"}</td>
+                <td className="px-4 py-3 text-slate-500 text-xs">{r.usuario || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!loading && restauraciones.length === 0 && <EmptyState message="No hay registros de restauración de base de datos." />}
+      </div>
+    </div>
+  );
+}
+
 // ─── 2. Version Query ─────────────────────────────────────────────────────────
 
 function VersionQuery({
-  versions, setVersions, onError,
+  versions, setVersions, onError, loggedUser = "coordinador_sistemas",
 }: {
   versions: Version[];
   setVersions: React.Dispatch<React.SetStateAction<Version[]>>;
   onError: (message: string) => void;
+  loggedUser?: string;
 }) {
   const [detailsModal, setDetailsModal] = useState<Version | null>(null);
   const [editModal, setEditModal] = useState<Version | null>(null);
-  const [editForm, setEditForm] = useState({ titulo: "", descripcion: "", enlace: "" });
+  const [colFilters, setColFilters] = useState({
+    titulo: "",
+    contenedor: "",
+    compilacion: "",
+    estado: "",
+  });
+
+  const filteredVersions = versions.filter((v) => {
+    const matchTitulo = !colFilters.titulo || (v.titulo || "").toLowerCase().includes(colFilters.titulo.toLowerCase());
+    const matchContenedor = !colFilters.contenedor || (v.contenedor_bd || "").toLowerCase().includes(colFilters.contenedor.toLowerCase());
+    const matchCompilacion = !colFilters.compilacion || (v.num_compilacion || "").toLowerCase().includes(colFilters.compilacion.toLowerCase());
+    const matchEstado = !colFilters.estado || v.estado === colFilters.estado;
+    return matchTitulo && matchContenedor && matchCompilacion && matchEstado;
+  });
+
+  const [editForm, setEditForm] = useState({
+    titulo: "",
+    descripcion: "",
+    enlace: "",
+    contenedor_bd: "DGEMPRES99",
+    num_compilacion: "",
+    fecha_compilacion: "",
+  });
+
+  const isCoordinator = loggedUser !== "practicante";
 
   function openEdit(v: Version) {
-    setEditForm({ titulo: v.titulo, descripcion: v.descripcion, enlace: v.enlace });
+    setEditForm({
+      titulo: v.titulo,
+      descripcion: v.descripcion,
+      enlace: v.enlace,
+      contenedor_bd: v.contenedor_bd || "DGEMPRES99",
+      num_compilacion: v.num_compilacion || "",
+      fecha_compilacion: v.fecha_compilacion ? v.fecha_compilacion.slice(0, 16) : "",
+    });
     setEditModal(v);
   }
 
@@ -936,7 +2399,10 @@ function VersionQuery({
     try {
       const updated = await api<ApiVersion>(`/versions/${editModal.id.slice(1)}`, {
         method: "PUT",
-        body: JSON.stringify(editForm),
+        body: JSON.stringify({
+          ...editForm,
+          fecha_compilacion: editForm.fecha_compilacion ? editForm.fecha_compilacion : null,
+        }),
       });
       setVersions((prev) => prev.map((v) => (v.id === editModal.id ? toVersion(updated) : v)));
       setEditModal(null);
@@ -961,26 +2427,79 @@ function VersionQuery({
     <div>
       <SectionHeader
         title="Consulta de Versiones del Sistema"
-        subtitle={`${versions.length} versión(es) registradas`}
+        subtitle={`${filteredVersions.length} de ${versions.length} versión(es) encontradas`}
       />
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto max-h-[600px] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              {["Título Versión", "Fecha Registro", "Estado", "Enlace", "Acciones"].map((h) => (
-                <th
-                  key={h}
-                  className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider"
-                >
-                  {h}
+              <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">Título Versión</th>
+              {isCoordinator && (
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-[#0778ac] uppercase tracking-wider bg-slate-50">Contenedor BD</th>
+              )}
+              <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">N° Compilación</th>
+              <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">Fecha Compilación</th>
+              <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">Fecha Registro</th>
+              <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">Estado</th>
+              <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">Enlace</th>
+              <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">Acciones</th>
+            </tr>
+            <tr className="bg-slate-100/90 border-t border-slate-200">
+              <th className="px-2 py-1.5 bg-slate-100 font-normal">
+                <input
+                  type="text"
+                  placeholder="Filtrar..."
+                  value={colFilters.titulo}
+                  onChange={(e) => setColFilters({ ...colFilters, titulo: e.target.value })}
+                  className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-normal bg-white"
+                />
+              </th>
+              {isCoordinator && (
+                <th className="px-2 py-1.5 bg-slate-100 font-normal">
+                  <input
+                    type="text"
+                    placeholder="Filtrar..."
+                    value={colFilters.contenedor}
+                    onChange={(e) => setColFilters({ ...colFilters, contenedor: e.target.value })}
+                    className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-normal bg-white"
+                  />
                 </th>
-              ))}
+              )}
+              <th className="px-2 py-1.5 bg-slate-100 font-normal">
+                <input
+                  type="text"
+                  placeholder="Filtrar..."
+                  value={colFilters.compilacion}
+                  onChange={(e) => setColFilters({ ...colFilters, compilacion: e.target.value })}
+                  className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-normal bg-white"
+                />
+              </th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal">
+                <select
+                  value={colFilters.estado}
+                  onChange={(e) => setColFilters({ ...colFilters, estado: e.target.value })}
+                  className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-normal bg-white"
+                >
+                  <option value="">Todos</option>
+                  <option value="activo">Activo</option>
+                  <option value="inactivo">Inactivo</option>
+                </select>
+              </th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {versions.map((v) => (
+            {filteredVersions.map((v) => (
               <tr key={v.id} className="hover:bg-slate-50/80 transition-colors">
                 <td className="px-4 py-3 font-medium text-slate-900 max-w-xs">{v.titulo}</td>
+                {isCoordinator && (
+                  <td className="px-4 py-3 font-bold text-[#0778ac] text-xs">{v.contenedor_bd || "—"}</td>
+                )}
+                <td className="px-4 py-3 text-slate-700 text-xs font-mono">{v.num_compilacion || "—"}</td>
+                <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fecha_compilacion || "—"}</td>
                 <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fechaRegistro}</td>
                 <td className="px-4 py-3">
                   <StatusBadge estado={v.estado} />
@@ -1030,8 +2549,10 @@ function VersionQuery({
           <div className="flex flex-col gap-5">
             <Field label="Título" value={detailsModal.titulo} />
             <Field label="Descripción" value={detailsModal.descripcion} />
-            <div className="flex gap-6">
-              <Field label="Estado" value={detailsModal.estado} />
+            <div className="grid grid-cols-2 gap-4">
+              {isCoordinator && <Field label="Contenedor BD" value={detailsModal.contenedor_bd || "—"} />}
+              <Field label="Número de Compilación" value={detailsModal.num_compilacion || "—"} />
+              <Field label="Fecha de Compilación" value={detailsModal.fecha_compilacion || "—"} />
               <Field label="Fecha de Registro" value={detailsModal.fechaRegistro} />
             </div>
             <div className="flex flex-col gap-0.5">
@@ -1060,6 +2581,37 @@ function VersionQuery({
               value={editForm.titulo}
               onChange={(e) => setEditForm({ ...editForm, titulo: e.target.value })}
             />
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Contenedor de BD</label>
+              <select
+                value={editForm.contenedor_bd}
+                onChange={(e) => setEditForm({ ...editForm, contenedor_bd: e.target.value })}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+              >
+                <option value="DGEMPRES99">DGEMPRES99</option>
+                <option value="DGEMPRES98">DGEMPRES98</option>
+                <option value="DGEMPRES10">DGEMPRES10</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormInput
+                label="Número de compilación"
+                value={editForm.num_compilacion}
+                onChange={(e) => setEditForm({ ...editForm, num_compilacion: e.target.value })}
+              />
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Fecha de compilación</label>
+                <input
+                  type="datetime-local"
+                  value={editForm.fecha_compilacion}
+                  onChange={(e) => setEditForm({ ...editForm, fecha_compilacion: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+                />
+              </div>
+            </div>
+
             <FormTextarea
               label="Descripción"
               required
@@ -1099,8 +2651,12 @@ function ValidationDetails({
   const [selectedVersion, setSelectedVersion] = useState<Version | null>(null);
   const [versionSelectorOpen, setVersionSelectorOpen] = useState(false);
   const [moduleDetailModal, setModuleDetailModal] = useState<string | null>(null);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
 
-  const obsForVersion = observaciones.filter((o) => o.versionId === selectedVersion?.id);
+  // Derive observations for the selected version from the globally provided prop
+  const obsForVersion = selectedVersion
+    ? observaciones.filter((o) => o.versionId === selectedVersion.id)
+    : [];
 
   function getStats(modulo: string) {
     const obs = obsForVersion.filter((o) => o.modulo === modulo);
@@ -1137,9 +2693,9 @@ function ValidationDetails({
       </div>
 
       {selectedVersion && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-h-[600px] overflow-y-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
+            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
                 {["Módulo", "Última Observación", "% Aprobación", "% Rechazo", "Acción"].map((h) => (
                   <th
@@ -1299,10 +2855,29 @@ function ValidationDetails({
                       )}
                       {obs.firma && (
                         <div className="mt-3 pt-3 border-t border-slate-200">
-                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
-                            Firma
-                          </span>
-                          <img src={obs.firma} alt="firma" className="max-h-14 object-contain" />
+                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Firma</span>
+                          <img
+                            src={obs.firma}
+                            alt="firma"
+                            className="max-h-14 object-contain cursor-zoom-in hover:opacity-80 transition-opacity"
+                            onClick={() => setLightboxImg(obs.firma!)}
+                          />
+                        </div>
+                      )}
+                      {obs.captura && obs.captura.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">Captura de la Incidencia</span>
+                          <div className="flex flex-wrap gap-2">
+                            {obs.captura.map((src, i) => (
+                              <img
+                                key={i}
+                                src={src}
+                                alt={`captura-${i}`}
+                                className="h-16 w-24 object-cover rounded-lg border border-slate-200 cursor-zoom-in hover:opacity-80 transition-opacity"
+                                onClick={() => setLightboxImg(src)}
+                              />
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1313,11 +2888,17 @@ function ValidationDetails({
           </div>
         )}
       </Modal>
+      {lightboxImg && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center cursor-zoom-out"
+          onClick={() => setLightboxImg(null)}
+        >
+          <img src={lightboxImg} alt="preview" className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl" />
+        </div>
+      )}
     </div>
   );
 }
-
-// ─── 4.1 Report Firmas ────────────────────────────────────────────────────────
 
 function ReportFirmas({
   versions, observaciones,
@@ -1328,6 +2909,7 @@ function ReportFirmas({
   const [selectedVid, setSelectedVid] = useState("");
   const [reportContextOpen, setReportContextOpen] = useState(false);
   const [reportContext, setReportContext] = useState({ conclusion: "", observacion: "" });
+  const [rfColFilters, setRfColFilters] = useState({ nombre: "", cargo: "", modulo: "", fechaHora: "", estado: "" });
   const version = versions.find((v) => v.id === selectedVid);
   const filteredObs = observaciones.filter((o) => o.versionId === selectedVid);
 
@@ -1352,7 +2934,7 @@ function ReportFirmas({
       .join("");
 
     const descripcionRows = filteredObs
-      .map((o, i) => `<tr><td>${i + 1}. [${o.modulo}] ${o.estado === "aprobacion" ? "Aprobación" : "Rechazo"}: ${o.observacion}</td></tr>`)
+       .map((o, i) => `<tr><td>${i + 1}. [${o.modulo}] ${o.estado === "aprobacion" ? "Aprobación" : "Rechazo"}: ${o.observacion}${o.captura ? '<br/><img src="' + o.captura + '" style="max-width:200px;"/>' : ''}</td></tr>`)
       .join("");
 
     const asistenciaMap = new Map<string, { nombre: string; cargo: string; firma?: string }>();
@@ -1501,41 +3083,66 @@ function ReportFirmas({
           (filteredObs.length === 0 ? (
             <EmptyState message="No hay observaciones registradas para esta versión." />
           ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  {["#", "Nombre", "Cargo", "Módulo", "Fecha/Hora", "Estado", "Firma"].map((h) => (
-                    <th
-                      key={h}
-                      className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredObs.map((o, i) => (
-                  <tr key={o.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
-                    <td className="px-4 py-3 font-medium text-slate-900">{o.nombre}</td>
-                    <td className="px-4 py-3 text-xs text-slate-600">{o.cargo ?? "—"}</td>
-                    <td className="px-4 py-3 text-xs text-slate-600 font-medium">{o.modulo}</td>
-                    <td className="px-4 py-3 text-xs font-mono text-slate-500">{o.fechaHora}</td>
-                    <td className="px-4 py-3">
-                      <StatusBadge estado={o.estado} />
-                    </td>
-                    <td className="px-4 py-3">
-                      {o.firma ? (
-                        <img src={o.firma} alt="firma" className="h-10 object-contain" />
-                      ) : (
-                        <span className="text-xs text-slate-400 italic">Sin firma</span>
-                      )}
-                    </td>
+            <div className="max-h-[500px] overflow-y-auto overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+                  <tr>
+                    {["#", "Nombre", "Cargo", "Módulo", "Fecha/Hora", "Estado", "Firma"].map((h) => (
+                      <th
+                        key={h}
+                        className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider"
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                  <tr className="bg-slate-100/90 border-t border-slate-200">
+                    <th className="px-4 py-1.5"></th>
+                    <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar nombre" onChange={(e) => setRfColFilters((p) => ({ ...p, nombre: e.target.value }))} /></th>
+                    <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar cargo" onChange={(e) => setRfColFilters((p) => ({ ...p, cargo: e.target.value }))} /></th>
+                    <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar módulo" onChange={(e) => setRfColFilters((p) => ({ ...p, modulo: e.target.value }))} /></th>
+                    <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar fecha" onChange={(e) => setRfColFilters((p) => ({ ...p, fechaHora: e.target.value }))} /></th>
+                    <th className="px-4 py-1.5">
+                      <select className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" onChange={(e) => setRfColFilters((p) => ({ ...p, estado: e.target.value }))}>
+                        <option value="">Todos</option>
+                        <option value="aprobacion">Aprobación</option>
+                        <option value="rechazo">Rechazo</option>
+                      </select>
+                    </th>
+                    <th className="px-4 py-1.5"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredObs
+                    .filter((o) =>
+                      (!rfColFilters.nombre || o.nombre.toLowerCase().includes(rfColFilters.nombre.toLowerCase())) &&
+                      (!rfColFilters.cargo || (o.cargo ?? "").toLowerCase().includes(rfColFilters.cargo.toLowerCase())) &&
+                      (!rfColFilters.modulo || o.modulo.toLowerCase().includes(rfColFilters.modulo.toLowerCase())) &&
+                      (!rfColFilters.fechaHora || o.fechaHora.toLowerCase().includes(rfColFilters.fechaHora.toLowerCase())) &&
+                      (!rfColFilters.estado || o.estado === rfColFilters.estado)
+                    )
+                    .map((o, i) => (
+                      <tr key={o.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
+                        <td className="px-4 py-3 font-medium text-slate-900">{o.nombre}</td>
+                        <td className="px-4 py-3 text-xs text-slate-600">{o.cargo ?? "—"}</td>
+                        <td className="px-4 py-3 text-xs text-slate-600 font-medium">{o.modulo}</td>
+                        <td className="px-4 py-3 text-xs font-mono text-slate-500">{o.fechaHora}</td>
+                        <td className="px-4 py-3">
+                          <StatusBadge estado={o.estado} />
+                        </td>
+                        <td className="px-4 py-3">
+                          {o.firma ? (
+                            <img src={o.firma} alt="firma" className="h-10 object-contain" />
+                          ) : (
+                            <span className="text-xs text-slate-400 italic">Sin firma</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
           ))}
       </div>
 
@@ -1584,13 +3191,37 @@ function ReportDetalles({
   versions: Version[];
   observaciones: Observacion[];
 }) {
-  const [selectedVid, setSelectedVid] = useState("");
+  const [selectedVid, setSelectedVid] = useState("todas");
+  const [filterModulo, setFilterModulo] = useState("");
+  const [filterTipo, setFilterTipo] = useState("");
+  const [allObservaciones, setAllObservaciones] = useState<Observacion[]>([]);
+  const [loadingAll, setLoadingAll] = useState(false);
+
+  useEffect(() => {
+    if (selectedVid === "todas") {
+      setLoadingAll(true);
+      api<Observacion[]>("/observaciones/")
+        .then(setAllObservaciones)
+        .catch(() => setAllObservaciones(observaciones))
+        .finally(() => setLoadingAll(false));
+    }
+  }, [selectedVid, observaciones]);
+
+  const baseObs = selectedVid === "todas" ? (allObservaciones.length > 0 ? allObservaciones : observaciones) : observaciones.filter((o) => o.versionId === selectedVid);
   const version = versions.find((v) => v.id === selectedVid);
-  const filteredObs = observaciones.filter((o) => o.versionId === selectedVid);
+
+  const filteredObs = baseObs.filter((o) => {
+    const byModulo = !filterModulo || o.modulo === filterModulo;
+    const byTipo = !filterTipo || o.estado === filterTipo;
+    return byModulo && byTipo;
+  });
+
+  const availableModulos = [...new Set(baseObs.map((o) => o.modulo))].sort();
 
   function generatePDF() {
     const win = window.open("", "_blank");
     if (!win) return;
+    const subtitleText = selectedVid === "todas" ? "Todas las versiones publicadas" : (version?.titulo ?? "");
     win.document.write(`<!DOCTYPE html><html><head><title>Reporte de Validación</title>
 <style>
   body{font-family:Arial,sans-serif;padding:40px;color:#0f172a;font-size:13px}
@@ -1609,7 +3240,7 @@ function ReportDetalles({
   @media print{body{padding:20px}}
 </style></head><body>
 <h1>Reporte de Detalles de Validación</h1>
-<div class="sub">${version?.titulo ?? ""} &nbsp;|&nbsp; Generado: ${new Date().toLocaleDateString("es-CO", { dateStyle: "long" })}</div>
+<div class="sub">${subtitleText} &nbsp;|&nbsp; Generado: ${new Date().toLocaleDateString("es-CO", { dateStyle: "long" })}</div>
 ${filteredObs
   .map(
     (o) => `<div class="obs ${o.estado === "aprobacion" ? "ap" : "re"}">
@@ -1617,7 +3248,7 @@ ${filteredObs
     <strong>${o.nombre}</strong>
     <span class="badge ${o.estado === "aprobacion" ? "apb" : "reb"}">${o.estado === "aprobacion" ? "Aprobación" : "Rechazo"}</span>
   </div>
-  <div class="meta">Módulo: <strong>${o.modulo}</strong> &nbsp;|&nbsp; ${o.fechaHora}</div>
+  <div class="meta">Versión: <strong>${o.versionTitulo || o.versionId}</strong> &nbsp;|&nbsp; Módulo: <strong>${o.modulo}</strong> &nbsp;|&nbsp; ${o.fechaHora}</div>
   <div class="text">${o.observacion}</div>
   ${o.incidencia || o.ruta ? `<div class="extra">${o.incidencia ? `Incidencia: <strong>${o.incidencia}</strong>` : ""}${o.ruta ? ` &nbsp;|&nbsp; Ruta: ${o.ruta}` : ""}</div>` : ""}
 </div>`
@@ -1632,20 +3263,21 @@ ${filteredObs
     <div>
       <SectionHeader
         title="Reporte de Detalles de Validación"
-        subtitle="Genera un reporte PDF con todos los registros de validación de una versión."
+        subtitle="Consulte y filtre los detalles de validación por versión, módulo y tipo."
       />
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-        <div className="flex items-end gap-4 mb-6">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Filtrar por Versión
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        {/* Persistent Filter Bar */}
+        <div className="grid gap-4 md:grid-cols-4 items-end bg-slate-50 p-4 rounded-xl border border-slate-200">
+          <div>
+            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+              Versión
             </label>
             <select
               value={selectedVid}
               onChange={(e) => setSelectedVid(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac] min-w-72"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
             >
-              <option value="">Seleccione una versión...</option>
+              <option value="todas">Todas las versiones</option>
               {versions.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.titulo}
@@ -1653,50 +3285,91 @@ ${filteredObs
               ))}
             </select>
           </div>
-          <Btn
-            v="primary"
-            onClick={generatePDF}
-            disabled={!selectedVid || filteredObs.length === 0}
-          >
-            <Printer size={15} /> Generar PDF
-          </Btn>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+              Módulo
+            </label>
+            <select
+              value={filterModulo}
+              onChange={(e) => setFilterModulo(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+            >
+              <option value="">Todos los módulos</option>
+              {availableModulos.map((m) => (
+                <option key={m} value={m}>{MODULO_LABELS[m] ?? m}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+              Tipo
+            </label>
+            <select
+              value={filterTipo}
+              onChange={(e) => setFilterTipo(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+            >
+              <option value="">Todos (Aprobados / Rechazados)</option>
+              <option value="aprobacion">Solo Aprobados</option>
+              <option value="rechazo">Solo Rechazados</option>
+            </select>
+          </div>
+
+          <div>
+            <Btn
+              v="primary"
+              onClick={generatePDF}
+              disabled={filteredObs.length === 0}
+              className="w-full justify-center"
+            >
+              <Printer size={15} /> Generar PDF ({filteredObs.length})
+            </Btn>
+          </div>
         </div>
 
-        {selectedVid &&
-          (filteredObs.length === 0 ? (
-            <EmptyState message="No hay observaciones registradas para esta versión." />
-          ) : (
-            <div className="flex flex-col gap-3">
-              {filteredObs.map((o) => (
-                <div
-                  key={o.id}
-                  className={`p-4 rounded-xl border ${
-                    o.estado === "aprobacion"
-                      ? "border-emerald-200 bg-emerald-50 border-l-4 border-l-emerald-500"
-                      : "border-[#d43a39]/20 bg-[#d43a39]/10 border-l-4 border-l-[#d43a39]"
-                  }`}
-                >
-                  <div className="flex justify-between items-start mb-1.5">
-                    <div>
-                      <span className="font-semibold text-slate-900 text-sm">{o.nombre}</span>
-                      <span className="text-xs text-slate-500 ml-2">— {o.modulo}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <StatusBadge estado={o.estado} />
-                      <span className="text-xs font-mono text-slate-400">{o.fechaHora}</span>
-                    </div>
+        {/* Independent Scroll Container */}
+        <div className="max-h-[600px] overflow-y-auto space-y-3 pr-1 pt-1">
+          {loadingAll && <EmptyState message="Cargando detalles de validación de todas las versiones..." />}
+
+          {!loadingAll && filteredObs.length === 0 && (
+            <EmptyState message="No hay observaciones registradas con los filtros seleccionados." />
+          )}
+
+          {!loadingAll &&
+            filteredObs.map((o) => (
+              <div
+                key={o.id}
+                className={`p-4 rounded-xl border ${
+                  o.estado === "aprobacion"
+                    ? "border-emerald-200 bg-emerald-50/70 border-l-4 border-l-emerald-500"
+                    : "border-[#d43a39]/20 bg-[#d43a39]/10 border-l-4 border-l-[#d43a39]"
+                }`}
+              >
+                <div className="flex flex-wrap justify-between items-start gap-2 mb-1.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-slate-900 text-sm">{o.nombre}</span>
+                    <span className="text-xs font-semibold text-[#0778ac] bg-blue-100/80 px-2.5 py-0.5 rounded border border-blue-200">
+                      {o.versionTitulo || o.versionId}
+                    </span>
+                    <span className="text-xs text-slate-600 font-medium">— {MODULO_LABELS[o.modulo] ?? o.modulo}</span>
                   </div>
-                  <p className="text-sm text-slate-700 leading-relaxed">{o.observacion}</p>
-                  {(o.incidencia || o.ruta) && (
-                    <div className="mt-2.5 pt-2.5 border-t border-[#d43a39]/20 flex gap-6">
-                      {o.incidencia && <Field label="Incidencia" value={o.incidencia} />}
-                      {o.ruta && <Field label="Ruta" value={o.ruta} />}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <StatusBadge estado={o.estado} />
+                    <span className="text-xs font-mono text-slate-500">{o.fechaHora}</span>
+                  </div>
                 </div>
-              ))}
-            </div>
-          ))}
+                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{o.observacion}</p>
+                {(o.incidencia || o.ruta) && (
+                  <div className="mt-2.5 pt-2.5 border-t border-slate-200/60 flex flex-wrap gap-6 text-xs text-slate-600">
+                    {o.incidencia && <div><span className="font-bold text-slate-700 uppercase">Incidencia:</span> {o.incidencia}</div>}
+                    {o.ruta && <div><span className="font-bold text-slate-700 uppercase">Ruta:</span> {o.ruta}</div>}
+                  </div>
+                )}
+              </div>
+            ))}
+        </div>
       </div>
     </div>
   );
@@ -1809,13 +3482,17 @@ function ValidationRegistration({
   onError: (message: string) => void;
 }) {
   const [detailsVersion, setDetailsVersion] = useState<Version | null>(null);
+  const [consultVersion, setConsultVersion] = useState<Version | null>(null);
   const [detailForm, setDetailForm] = useState({ modulo: "", otrosText: "" });
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [rejectionOpen, setRejectionOpen] = useState(false);
   const [apForm, setApForm] = useState({ observacion: "", nombre: "", cargo: "", firma: "" });
-  const [reForm, setReForm] = useState({ incidencia: "", ruta: "", observacion: "", nombre: "", cargo: "", firma: "" });
+  const [reForm, setReForm] = useState({ incidencia: "", ruta: "", observacion: "", nombre: "", cargo: "", firma: "", captura: [] as string[] });
+  const [vrColFilters, setVrColFilters] = useState({ titulo: "", fecha: "", estado: "" });
   const firmaApRef = useRef<HTMLInputElement>(null);
   const firmaReRef = useRef<HTMLInputElement>(null);
+  const capturaReRef = useRef<HTMLInputElement>(null);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
 
   function openDetails(v: Version) {
     setDetailForm({ modulo: "", otrosText: "" });
@@ -1837,6 +3514,21 @@ function ValidationRegistration({
       else setReForm((f) => ({ ...f, firma: res }));
     };
     reader.readAsDataURL(file);
+  }
+
+  function handleCaptura(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const res = ev.target?.result as string;
+        setReForm((f) => ({ ...f, captura: [...f.captura, res] }));
+      };
+      reader.readAsDataURL(file);
+    });
+    // Reset input so same file can be re-added
+    e.target.value = "";
   }
 
   async function submitApproval() {
@@ -1864,7 +3556,7 @@ function ValidationRegistration({
       });
       setObservaciones((prev) => [created, ...prev]);
       setRejectionOpen(false);
-      setReForm({ incidencia: "", ruta: "", observacion: "", nombre: "", cargo: "", firma: "" });
+      setReForm({ incidencia: "", ruta: "", observacion: "", nombre: "", cargo: "", firma: "", captura: [] as string[] });
       setDetailsVersion(null);
     } catch (error) {
       onError(error instanceof Error ? error.message : "No fue posible registrar el rechazo.");
@@ -1880,9 +3572,9 @@ function ValidationRegistration({
         title="Registro de Validación del Sistema"
         subtitle="Versiones disponibles para validación. Registre sus observaciones, aprobaciones o rechazos."
       />
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-h-[600px] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
               {["Título Versión", "Fecha Registro", "Estado", "Enlace", "Obs.", "Acciones"].map((h) => (
                 <th
@@ -1893,9 +3585,30 @@ function ValidationRegistration({
                 </th>
               ))}
             </tr>
+            <tr className="bg-slate-100/90 border-t border-slate-200">
+              <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar título" onChange={(e) => setVrColFilters((p) => ({ ...p, titulo: e.target.value }))} /></th>
+              <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar fecha" onChange={(e) => setVrColFilters((p) => ({ ...p, fecha: e.target.value }))} /></th>
+              <th className="px-4 py-1.5">
+                <select className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" onChange={(e) => setVrColFilters((p) => ({ ...p, estado: e.target.value }))}>
+                  <option value="">Todos</option>
+                  <option value="activo">Activo</option>
+                  <option value="inactivo">Inactivo</option>
+                  <option value="publicado">Publicado</option>
+                </select>
+              </th>
+              <th className="px-4 py-1.5"></th>
+              <th className="px-4 py-1.5"></th>
+              <th className="px-4 py-1.5"></th>
+            </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {versions.map((v) => (
+            {versions
+              .filter((v) =>
+                (!vrColFilters.titulo || v.titulo.toLowerCase().includes(vrColFilters.titulo.toLowerCase())) &&
+                (!vrColFilters.fecha || v.fechaRegistro.toLowerCase().includes(vrColFilters.fecha.toLowerCase())) &&
+                (!vrColFilters.estado || v.estado === vrColFilters.estado)
+              )
+              .map((v) => (
               <tr key={v.id} className="hover:bg-slate-50/80 transition-colors">
                 <td className="px-4 py-3 font-medium text-slate-900 max-w-xs">{v.titulo}</td>
                 <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fechaRegistro}</td>
@@ -1925,7 +3638,7 @@ function ValidationRegistration({
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1">
-                    <Btn v="ghost" sm onClick={() => openDetails(v)}>
+                    <Btn v="ghost" sm onClick={() => setConsultVersion(v)}>
                       <Eye size={13} /> Consultar
                     </Btn>
                     <Btn
@@ -1943,6 +3656,123 @@ function ValidationRegistration({
           </tbody>
         </table>
       </div>
+
+      {/* Consult version modal */}
+      <Modal
+        open={!!consultVersion}
+        onClose={() => setConsultVersion(null)}
+        title="Detalles de la Versión y Observaciones"
+        size="lg"
+      >
+        {consultVersion && (
+          <div className="flex flex-col gap-6">
+            <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="col-span-2">
+                <Field label="Título de la Versión" value={consultVersion.titulo} />
+              </div>
+              <Field label="Fecha de Registro" value={consultVersion.fechaRegistro} />
+              <Field label="Estado" value={consultVersion.estado} />
+              <div className="col-span-2">
+                <Field label="Descripción de la Compilación" value={consultVersion.descripcion} />
+              </div>
+              <div className="col-span-2 flex flex-col gap-0.5">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Enlace URL
+                </span>
+                <a
+                  href={consultVersion.enlace}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm text-[#0778ac] hover:underline flex items-center gap-1"
+                >
+                  <ExternalLink size={13} /> {consultVersion.enlace}
+                </a>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-slate-700">
+                  Cola de Observaciones
+                </h3>
+                <span className="text-xs text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full font-medium">
+                  {observaciones.filter((o) => o.versionId === consultVersion.id).length} registro(s)
+                </span>
+              </div>
+              {observaciones.filter((o) => o.versionId === consultVersion.id).length === 0 ? (
+                <div className="text-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
+                  No hay observaciones registradas para esta versión.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+                  {observaciones
+                    .filter((o) => o.versionId === consultVersion.id)
+                    .map((obs) => (
+                      <div
+                        key={obs.id}
+                        className={`p-4 rounded-xl border ${
+                          obs.estado === "aprobacion"
+                            ? "border-emerald-200 bg-emerald-50"
+                            : "border-[#d43a39]/20 bg-[#d43a39]/10"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-sm text-slate-900">{obs.nombre}</span>
+                              <span className="text-xs text-slate-400">— {obs.modulo}</span>
+                            </div>
+                            {obs.cargo && (
+                              <span className="text-xs text-slate-500">{obs.cargo}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <StatusBadge estado={obs.estado} />
+                            <span className="text-xs text-slate-500 font-mono">{obs.fechaHora}</span>
+                          </div>
+                        </div>
+                        <p className="text-sm text-slate-700 leading-relaxed mt-2">{obs.observacion}</p>
+                        {obs.estado === "rechazo" && (obs.incidencia || obs.ruta) && (
+                          <div className="mt-3 pt-3 border-t border-[#d43a39]/20 grid grid-cols-2 gap-3">
+                            {obs.incidencia && <Field label="Incidencia" value={obs.incidencia} />}
+                            {obs.ruta && <Field label="Ruta" value={obs.ruta} />}
+                          </div>
+                        )}
+                        {obs.firma && (
+                          <div className="mt-3 pt-3 border-t border-slate-200">
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Firma</span>
+                            <img
+                              src={obs.firma}
+                              alt="firma"
+                              className="max-h-14 object-contain cursor-zoom-in hover:opacity-80 transition-opacity"
+                              onClick={() => setLightboxImg(obs.firma!)}
+                            />
+                          </div>
+                        )}
+                        {obs.captura && obs.captura.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-slate-200">
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">Captura de la Incidencia</span>
+                            <div className="flex flex-wrap gap-2">
+                              {obs.captura.map((src, i) => (
+                                <img
+                                  key={i}
+                                  src={src}
+                                  alt={`captura-${i}`}
+                                  className="h-16 w-24 object-cover rounded-lg border border-slate-200 cursor-zoom-in hover:opacity-80 transition-opacity"
+                                  onClick={() => setLightboxImg(src)}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Details + observation modal */}
       <Modal
@@ -2175,6 +4005,48 @@ function ValidationRegistration({
               onChange={(e) => handleFirma(e, "re")}
             />
           </div>
+          {/* Captura de la Incidencia */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+              Captura de la Incidencia — múltiples imágenes (.jpg / .png)
+            </label>
+            {reForm.captura.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-1">
+                {reForm.captura.map((src, idx) => (
+                  <div key={idx} className="relative group">
+                    <img
+                      src={src}
+                      alt={`captura-${idx}`}
+                      className="h-16 w-24 object-cover rounded-lg border border-slate-200 cursor-zoom-in hover:opacity-80 transition-opacity"
+                      onClick={() => setLightboxImg(src)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setReForm((f) => ({ ...f, captura: f.captura.filter((_, i) => i !== idx) }))}
+                      className="absolute -top-1.5 -right-1.5 bg-[#d43a39] text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div
+              onClick={() => capturaReRef.current?.click()}
+              className="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center cursor-pointer hover:border-[#d43a39] hover:bg-[#ffe6e6] transition-all"
+            >
+              <div className="flex flex-col items-center gap-2 text-slate-400">
+                <Upload size={20} />
+                <span className="text-xs">Haga clic para agregar capturas ({reForm.captura.length} cargada{reForm.captura.length !== 1 ? "s" : ""})</span>
+              </div>
+            </div>
+            <input
+              ref={capturaReRef}
+              type="file"
+              accept=".jpg,.jpeg,.png"
+              multiple
+              className="hidden"
+              onChange={(e) => handleCaptura(e)}
+            />
+          </div>
           <div className="flex gap-2 pt-2 border-t border-slate-100">
             <Btn
               v="danger"
@@ -2189,37 +4061,161 @@ function ValidationRegistration({
           </div>
         </div>
       </Modal>
+      {lightboxImg && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center cursor-zoom-out"
+          onClick={() => setLightboxImg(null)}
+        >
+          <img src={lightboxImg} alt="preview" className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl" />
+        </div>
+      )}
     </div>
   );
+}
+
+function renderImpactoBadge(impacto?: string | null) {
+  const imp = (impacto || "").toLowerCase().trim();
+  if (imp === "alto") {
+    return <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200 uppercase">Alto</span>;
+  }
+  if (imp === "medio") {
+    return <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200 uppercase">Medio</span>;
+  }
+  if (imp === "bajo") {
+    return <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase">Bajo</span>;
+  }
+  return <span className="text-slate-600 text-xs">{impacto || "—"}</span>;
 }
 
 // ─── Boletines ────────────────────────────────────────────────────────────────
 
 function Boletines({ canUpload = true }: { canUpload?: boolean }) {
   const [items, setItems] = useState<ApiBoletin[]>([]);
+  const [periodos, setPeriodos] = useState<ApiBoletinPeriodo[]>([]);
   const [error, setError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    tipo_documento: "Técnico",
+  const [loading, setLoading] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedBoletin, setSelectedBoletin] = useState<ApiBoletin | null>(null);
+  const [selectedMes, setSelectedMes] = useState<number | "">("");
+  const [selectedAnio, setSelectedAnio] = useState<number | "">("");
+  const [filters, setFilters] = useState({
+    consecutivo: "",
+    modulo: "",
+    fecha: "",
+    opcion: "",
+    impacto: "",
+    categoria: "",
+    clase_documento: "",
     asunto: "",
-    instructivo_descripcion: "",
+  });
+  const [form, setForm] = useState({
+    mes: new Date().getMonth() + 1,
+    anio: new Date().getFullYear(),
     archivo: null as File | null,
   });
 
+  const monthName = (month: number) => {
+    const names = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+    ];
+    return names[month - 1] ?? `Mes ${month}`;
+  };
+
+  const loadPeriodos = async () => {
+    const data = await api<ApiBoletinPeriodo[]>("/boletines/periodos");
+    setPeriodos(data);
+    return data;
+  };
+
+  const loadItems = async (mes: number | "", anio: number | "") => {
+    setLoading(true);
+    try {
+      const query = mes && anio ? `?mes=${mes}&anio=${anio}` : "";
+      const data = await api<ApiBoletin[]>(`/boletines/${query}`);
+      setItems(data);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No fue posible consultar boletines.");
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    api<ApiBoletin[]>("/boletines/").then(setItems).catch((err) => setError(err.message));
+    let active = true;
+    (async () => {
+      try {
+        const data = await loadPeriodos();
+        if (!active) return;
+        if (data.length > 0) {
+          setSelectedMes(data[0].mes);
+          setSelectedAnio(data[0].anio);
+          await loadItems(data[0].mes, data[0].anio);
+        } else {
+          await loadItems("", "");
+        }
+      } catch (err) {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "No fue posible cargar periodos.");
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const colores: Record<string, string> = {
-    Técnico: "bg-[#0778ac]/10 text-[#0778ac]",
-    Funcional: "bg-violet-100 text-violet-700",
-    Seguridad: "bg-amber-100 text-amber-700",
+  useEffect(() => {
+    if (!selectedMes || !selectedAnio) return;
+    loadItems(selectedMes, selectedAnio);
+  }, [selectedMes, selectedAnio]);
+
+  const periodKey = (p: ApiBoletinPeriodo) => `${p.anio}-${p.mes}`;
+  const uniqueYears = [...new Set(periodos.map((p) => p.anio))].sort((a, b) => b - a);
+  const monthsForYear = periodos
+    .filter((p) => (selectedAnio ? p.anio === selectedAnio : true))
+    .map((p) => p.mes)
+    .filter((value, index, arr) => arr.indexOf(value) === index)
+    .sort((a, b) => a - b);
+
+  const normalize = (value: string | null | undefined) => (value ?? "").toLowerCase().trim();
+  const formatDate = (value: string | null) => (value ? value.slice(0, 10) : "");
+
+  const uniqueValues = {
+    consecutivo: [...new Set(items.map((b) => (b.consecutivo != null ? String(b.consecutivo) : "")).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    fecha: [...new Set(items.map((b) => formatDate(b.fecha)).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    modulo: [...new Set(items.map((b) => b.modulo).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b)),
+    opcion: [...new Set(items.map((b) => b.opcion).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b)),
+    impacto: [...new Set(items.map((b) => b.impacto).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b)),
+    categoria: [...new Set(items.map((b) => b.categoria).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b)),
+    clase_documento: [...new Set(items.map((b) => b.clase_documento).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b)),
+    asunto: [...new Set(items.map((b) => b.asunto).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b)),
+  };
+
+  const filteredItems = items.filter((b) => {
+    const byConsecutivo = String(b.consecutivo ?? "").toLowerCase().includes(normalize(filters.consecutivo));
+    const byModulo = normalize(b.modulo).includes(normalize(filters.modulo));
+    const byFecha = formatDate(b.fecha).toLowerCase().includes(normalize(filters.fecha));
+    const byOpcion = normalize(b.opcion).includes(normalize(filters.opcion));
+    const byImpacto = normalize(b.impacto).includes(normalize(filters.impacto));
+    const byCategoria = normalize(b.categoria).includes(normalize(filters.categoria));
+    const byClaseDoc = normalize(b.clase_documento).includes(normalize(filters.clase_documento));
+    const byAsunto = normalize(b.asunto).includes(normalize(filters.asunto));
+
+    return byConsecutivo && byModulo && byFecha && byOpcion && byImpacto && byCategoria && byClaseDoc && byAsunto;
+  });
+
+  const handleOpenDetail = (item: ApiBoletin) => {
+    setSelectedBoletin(item);
+    setDetailOpen(true);
   };
 
   async function handleSubmit() {
-    if (!form.asunto.trim()) {
-      setError("El asunto es obligatorio.");
+    if (!form.archivo) {
+      setError("Debe seleccionar un archivo Excel (.xlsx).");
       return;
     }
 
@@ -2228,25 +4224,32 @@ function Boletines({ canUpload = true }: { canUpload?: boolean }) {
 
     try {
       const body = new FormData();
-      body.append("tipo_documento", form.tipo_documento);
-      body.append("asunto", form.asunto);
-      body.append("instructivo_descripcion", form.instructivo_descripcion);
-      if (form.archivo) body.append("archivo", form.archivo);
+      body.append("mes", String(form.mes));
+      body.append("anio", String(form.anio));
+      body.append("archivo", form.archivo);
 
-      const created = await api<ApiBoletin>("/boletines/", {
+      const imported = await api<ApiBoletinImportResult>("/boletines/", {
         method: "POST",
         body,
       });
-      setItems((prev) => [created, ...prev]);
+
+      const updatedPeriodos = await loadPeriodos();
+      const exists = updatedPeriodos.some((p) => p.mes === imported.mes && p.anio === imported.anio);
+      if (!exists) {
+        setPeriodos((prev) => [...prev, { mes: imported.mes, anio: imported.anio }]);
+      }
+      setSelectedMes(imported.mes);
+      setSelectedAnio(imported.anio);
+      await loadItems(imported.mes, imported.anio);
+
       setForm({
-        tipo_documento: "Técnico",
-        asunto: "",
-        instructivo_descripcion: "",
+        mes: new Date().getMonth() + 1,
+        anio: new Date().getFullYear(),
         archivo: null,
       });
       setFormOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No fue posible guardar el boletín.");
+      setError(err instanceof Error ? err.message : "No fue posible importar el archivo de boletines.");
     } finally {
       setSaving(false);
     }
@@ -2257,84 +4260,311 @@ function Boletines({ canUpload = true }: { canUpload?: boolean }) {
       <div className="flex items-center justify-between mb-6">
         <SectionHeader
           title="Boletines"
-          subtitle="Comunicados y boletines informativos del sistema."
+          subtitle="Cargue el archivo Excel por mes/año y consulte el detalle por periodo."
         />
         {canUpload && (
           <Btn v="primary" onClick={() => setFormOpen(true)}>
-            <Plus size={14} /> Cargar Boletín
+            <Plus size={14} /> Cargar Excel
           </Btn>
         )}
       </div>
-      <div className="grid gap-4">
-        {error && <EmptyState message={error} />}
-        {!error && items.length === 0 && <EmptyState message="No hay boletines publicados." />}
-        {items.map((b) => (
-          <div
-            key={b.oid}
-            className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex items-start gap-4 hover:border-slate-300 transition-colors"
-          >
-            <div className="p-3 bg-slate-100 rounded-xl shrink-0">
-              <FileText size={20} className="text-slate-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span
-                  className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wide ${colores[b.tipo_documento ?? ""] ?? "bg-slate-100 text-slate-700"}`}
-                >
-                  {b.tipo_documento ?? "Informativo"}
-                </span>
-                <span className="text-xs text-slate-400 font-mono">{b.fecha?.slice(0, 10) ?? ""}</span>
-              </div>
-              <h3 className="font-semibold text-slate-900 text-sm">{b.asunto ?? `Boletín #${b.consecutivo ?? b.oid}`}</h3>
-              <p className="text-sm text-slate-500 mt-1 leading-relaxed">{b.instructivo_descripcion ?? "Sin descripción disponible."}</p>
-            </div>
-            {b.archivo ? <a href={b.archivo} target="_blank" rel="noreferrer"><Btn v="secondary" sm className="shrink-0"><Download size={13} /> Descargar</Btn></a> : null}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-4">
+        <div className="grid gap-3 md:grid-cols-4 items-end">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Año</label>
+            <select
+              value={selectedAnio}
+              onChange={(e) => {
+                const year = Number(e.target.value);
+                setSelectedAnio(year);
+                const firstMonth = periodos.find((p) => p.anio === year)?.mes;
+                setSelectedMes(firstMonth ?? "");
+              }}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+              disabled={uniqueYears.length === 0}
+            >
+              <option value="">Seleccione...</option>
+              {uniqueYears.map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
           </div>
-        ))}
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Mes</label>
+            <select
+              value={selectedMes}
+              onChange={(e) => setSelectedMes(Number(e.target.value))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+              disabled={monthsForYear.length === 0}
+            >
+              <option value="">Seleccione...</option>
+              {monthsForYear.map((month) => (
+                <option key={month} value={month}>{monthName(month)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="md:col-span-2 text-sm text-slate-500">
+            {selectedMes && selectedAnio
+              ? `Mostrando boletines de ${monthName(selectedMes)} ${selectedAnio}.`
+              : "Seleccione un mes y año para consultar los boletines."}
+          </div>
+        </div>
+      </div>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto max-h-[600px] overflow-y-auto">
+        {error && <EmptyState message={error} />}
+        {!error && loading && <EmptyState message="Cargando boletines..." />}
+        {!error && !loading && items.length === 0 && <EmptyState message="No hay boletines para el periodo seleccionado." />}
+        {!error && !loading && items.length > 0 && (
+          <table className="w-full text-sm min-w-[960px] table-fixed">
+            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+              <tr>
+                {[
+                  "Accion",
+                  "Consecutivo",
+                  "Modulo",
+                  "Fecha",
+                  "Opcion",
+                  "Impacto",
+                  "Categoria",
+                  "Clase de documento",
+                  "Asunto",
+                ].map((heading) => (
+                  <th
+                    key={heading}
+                    className="px-3 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50"
+                  >
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+              <tr className="border-t border-slate-200 bg-slate-50">
+                <th className="px-3 py-2">
+                  <span className="text-[10px] text-slate-400 uppercase">Filtro</span>
+                </th>
+                <th className="px-3 py-2">
+                  <input
+                    list="boletin-consecutivo-options"
+                    value={filters.consecutivo}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, consecutivo: e.target.value }))}
+                    className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                    placeholder="Filtrar"
+                  />
+                  <datalist id="boletin-consecutivo-options">
+                    {uniqueValues.consecutivo.map((value) => (
+                      <option key={value} value={value} />
+                    ))}
+                  </datalist>
+                </th>
+                <th className="px-3 py-2">
+                  <input
+                    list="boletin-modulo-options"
+                    value={filters.modulo}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, modulo: e.target.value }))}
+                    className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                    placeholder="Filtrar"
+                  />
+                  <datalist id="boletin-modulo-options">
+                    {uniqueValues.modulo.map((value) => (
+                      <option key={value} value={value} />
+                    ))}
+                  </datalist>
+                </th>
+                <th className="px-3 py-2">
+                  <input
+                    list="boletin-fecha-options"
+                    value={filters.fecha}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, fecha: e.target.value }))}
+                    className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                    placeholder="yyyy-mm-dd"
+                  />
+                  <datalist id="boletin-fecha-options">
+                    {uniqueValues.fecha.map((value) => (
+                      <option key={value} value={value} />
+                    ))}
+                  </datalist>
+                </th>
+                <th className="px-3 py-2">
+                  <input
+                    value={filters.opcion ?? ""}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, opcion: e.target.value }))}
+                    className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                    placeholder="Filtrar"
+                  />
+                </th>
+                <th className="px-3 py-2">
+                  <input
+                    list="boletin-impacto-options"
+                    value={filters.impacto}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, impacto: e.target.value }))}
+                    className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                    placeholder="alto/medio/bajo"
+                  />
+                  <datalist id="boletin-impacto-options">
+                    {uniqueValues.impacto.map((value) => (
+                      <option key={value} value={value} />
+                    ))}
+                  </datalist>
+                </th>
+                <th className="px-3 py-2">
+                  <input
+                    value={filters.categoria ?? ""}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, categoria: e.target.value }))}
+                    className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                    placeholder="Filtrar"
+                  />
+                </th>
+                <th className="px-3 py-2">
+                  <input
+                    value={filters.clase_documento ?? ""}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, clase_documento: e.target.value }))}
+                    className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                    placeholder="Filtrar"
+                  />
+                </th>
+                <th className="px-3 py-2">
+                  <input
+                    list="boletin-asunto-options"
+                    value={filters.asunto}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, asunto: e.target.value }))}
+                    className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                    placeholder="Filtrar"
+                  />
+                  <datalist id="boletin-asunto-options">
+                    {uniqueValues.asunto.map((value) => (
+                      <option key={value} value={value} />
+                    ))}
+                  </datalist>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredItems.map((b) => (
+                <tr key={b.oid} className="hover:bg-slate-50/70">
+                  <td className="px-3 py-2 text-center">
+                    <Btn v="secondary" sm onClick={() => handleOpenDetail(b)}>
+                      Consultar
+                    </Btn>
+                  </td>
+                  <td className="px-3 py-2 text-slate-600">{b.consecutivo ?? "—"}</td>
+                  <td className="px-3 py-2 text-slate-600">{b.modulo || "—"}</td>
+                  <td className="px-3 py-2 text-slate-600">{b.fecha?.slice(0, 10) ?? "—"}</td>
+                  <td className="px-3 py-2 text-slate-600">{b.opcion || "—"}</td>
+                  <td className="px-3 py-2">{renderImpactoBadge(b.impacto)}</td>
+                  <td className="px-3 py-2 text-slate-600">{b.categoria || "—"}</td>
+                  <td className="px-3 py-2 text-slate-600">{b.clase_documento || "—"}</td>
+                  <td className="px-3 py-2 text-slate-700 max-w-[280px] truncate" title={b.asunto || ""}>{b.asunto || "—"}</td>
+                </tr>
+              ))}
+              {filteredItems.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-10 text-center text-slate-400 text-sm">
+                    No hay resultados para los filtros aplicados.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
 
+      <Modal
+        open={detailOpen}
+        onClose={() => {
+          setDetailOpen(false);
+          setSelectedBoletin(null);
+        }}
+        title="Detalle del Boletin"
+        size="lg"
+      >
+        {!selectedBoletin ? null : (
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              {[
+                ["Tipo de Documento", selectedBoletin.tipo_documento],
+                ["Consecutivo", selectedBoletin.consecutivo?.toString() ?? "—"],
+                ["Fecha", selectedBoletin.fecha?.slice(0, 10) ?? "—"],
+                ["Modulo", selectedBoletin.modulo],
+                ["Opcion", selectedBoletin.opcion],
+                ["Impacto", renderImpactoBadge(selectedBoletin.impacto)],
+                ["Categoria", selectedBoletin.categoria],
+                ["Con Documentacion", selectedBoletin.con_documentacion ? "Si" : "No"],
+                ["Clase de documento", selectedBoletin.clase_documento],
+                ["Advertencia", selectedBoletin.advertencia],
+              ].map(([label, value]) => (
+                <div key={label as string} className="rounded-xl border border-slate-200 p-3">
+                  <p className="text-[11px] uppercase tracking-wider text-slate-400">{label as string}</p>
+                  <div className="text-sm text-slate-700 mt-1 break-words">
+                    {typeof value === "string" ? value || "—" : value}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-[11px] uppercase tracking-wider text-slate-400">Asunto</p>
+              <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{selectedBoletin.asunto || "—"}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-[11px] uppercase tracking-wider text-slate-400">Instructivos - Descripcion</p>
+              <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{selectedBoletin.instructivo_descripcion || "—"}</p>
+            </div>
+            <div className="flex justify-end items-center gap-2 pt-2 border-t border-slate-100">
+              <Btn
+                v="primary"
+                onClick={() => {
+                  window.open(`/api/v1/boletines/${selectedBoletin.oid}/pdf`, "_blank");
+                }}
+              >
+                <Printer size={14} /> Descargar detalle
+              </Btn>
+              <Btn v="secondary" onClick={() => setDetailOpen(false)}>Cerrar</Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {canUpload && (
-        <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Cargar Boletín" size="lg">
+        <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Importar Boletines desde Excel" size="lg">
           <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Tipo de documento</label>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Mes</label>
               <select
-                value={form.tipo_documento}
-                onChange={(e) => setForm({ ...form, tipo_documento: e.target.value })}
+                value={form.mes}
+                onChange={(e) => setForm({ ...form, mes: Number(e.target.value) })}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
               >
-                <option value="Técnico">Técnico</option>
-                <option value="Funcional">Funcional</option>
-                <option value="Seguridad">Seguridad</option>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                  <option key={month} value={month}>{monthName(month)}</option>
+                ))}
               </select>
             </div>
             <div>
-              <FormInput
-                label="Asunto"
-                value={form.asunto}
-                onChange={(e) => setForm({ ...form, asunto: e.target.value })}
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Año</label>
+              <input
+                type="number"
+                min={2000}
+                max={2100}
+                value={form.anio}
+                onChange={(e) => setForm({ ...form, anio: Number(e.target.value) })}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
               />
             </div>
           </div>
-          <FormTextarea
-            label="Descripción"
-            rows={4}
-            value={form.instructivo_descripcion}
-            onChange={(e) => setForm({ ...form, instructivo_descripcion: e.target.value })}
-          />
           <div>
-            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Archivo PDF</label>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Archivo Excel (.xlsx)</label>
             <input
               type="file"
-              accept="application/pdf"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={(e) => setForm({ ...form, archivo: e.target.files?.[0] ?? null })}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
             />
+            <p className="text-xs text-slate-500 mt-2">
+              El archivo debe contener las columnas requeridas del formato de boletines.
+            </p>
           </div>
           <div className="flex gap-2 pt-2 border-t border-slate-100">
             <Btn v="primary" onClick={handleSubmit} disabled={saving}>
-              <Upload size={15} /> Guardar Boletín
+              <Upload size={15} /> Importar Excel
             </Btn>
             <Btn v="secondary" onClick={() => setFormOpen(false)}>
               Cancelar
@@ -2347,6 +4577,128 @@ function Boletines({ canUpload = true }: { canUpload?: boolean }) {
   );
 }
 
+// ─── Manuales Row with Download Request Flow ──────────────────────────────────
+
+function ManualRow({ m }: { m: ApiManual }) {
+  const [downloadStatus, setDownloadStatus] = useState<{ activo: boolean; minutos_restantes: number }>({ activo: false, minutos_restantes: 0 });
+  const [solicitudOpen, setSolicitudOpen] = useState(false);
+  const [solForm, setSolForm] = useState({ nombre_solicitante: "", area: "", descripcion: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const checkStatus = () => {
+    api<{ activo: boolean; minutos_restantes: number }>(`/manuales/solicitudes/estado-descarga/${m.oid}`)
+      .then(setDownloadStatus)
+      .catch(() => setDownloadStatus({ activo: false, minutos_restantes: 0 }));
+  };
+
+  useEffect(() => {
+    checkStatus();
+    const interval = setInterval(checkStatus, 30000);
+    return () => clearInterval(interval);
+  }, [m.oid]);
+
+  const handleSendSolicitud = () => {
+    if (!solForm.nombre_solicitante.trim() || !solForm.area.trim() || !solForm.descripcion.trim()) {
+      setErrorMsg("Todos los campos (Nombre, Área y Descripción) son obligatorios.");
+      return;
+    }
+    setSubmitting(true);
+    setErrorMsg("");
+    api("/manuales/solicitudes", {
+      method: "POST",
+      body: JSON.stringify({
+        manual_oid: m.oid,
+        nombre_solicitante: solForm.nombre_solicitante.trim(),
+        area: solForm.area.trim(),
+        descripcion: solForm.descripcion.trim(),
+      }),
+    })
+      .then(() => {
+        toast.success("Solicitud enviada a Coordinador de Sistemas para su aprobación.");
+        setSolicitudOpen(false);
+        setSolForm({ nombre_solicitante: "", area: "", descripcion: "" });
+      })
+      .catch((e) => setErrorMsg(e instanceof Error ? e.message : "Error al enviar la solicitud"))
+      .finally(() => setSubmitting(false));
+  };
+
+  return (
+    <tr className="hover:bg-slate-50/80 transition-colors">
+      <td className="px-4 py-3 text-xs font-bold text-[#0778ac]">{MODULO_LABELS[m.modulo] ?? m.modulo}</td>
+      <td className="px-4 py-3 font-medium text-slate-900">{m.titulo}</td>
+      <td className="px-4 py-3 text-slate-500 text-xs font-mono">v{m.version || "1.0"}</td>
+      <td className="px-4 py-3 text-slate-500 text-xs font-mono">{m.fecha_registro.slice(0, 10)}</td>
+      <td className="px-4 py-3 text-slate-500 text-xs font-mono">—</td>
+      <td className="px-4 py-3">
+        {m.archivo ? (
+          downloadStatus.activo ? (
+            <a href={m.archivo} target="_blank" rel="noreferrer">
+              <Btn v="success" sm>
+                <Download size={13} /> Descargar PDF ({downloadStatus.minutos_restantes} min)
+              </Btn>
+            </a>
+          ) : (
+            <Btn v="secondary" sm onClick={() => setSolicitudOpen(true)}>
+              <FileText size={13} /> Solicitar descarga
+            </Btn>
+          )
+        ) : (
+          <span className="text-xs text-slate-400">Sin archivo</span>
+        )}
+
+        <Modal open={solicitudOpen} onClose={() => setSolicitudOpen(false)} title={`Solicitar Descarga: ${m.titulo}`} size="md">
+          <div className="space-y-4">
+            {errorMsg && (
+              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs flex items-center gap-2">
+                <AlertCircle size={15} className="text-amber-600 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Nombre de quien solicita *</label>
+              <input
+                type="text"
+                value={solForm.nombre_solicitante}
+                onChange={(e) => setSolForm({ ...solForm, nombre_solicitante: e.target.value })}
+                placeholder="Ingrese su nombre completo"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Área *</label>
+              <input
+                type="text"
+                value={solForm.area}
+                onChange={(e) => setSolForm({ ...solForm, area: e.target.value })}
+                placeholder="Ingrese el área solicitante"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Descripción *</label>
+              <textarea
+                value={solForm.descripcion}
+                onChange={(e) => setSolForm({ ...solForm, descripcion: e.target.value })}
+                placeholder="Justifique el motivo de la solicitud..."
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white min-h-[90px]"
+              />
+            </div>
+            <div className="flex gap-2 pt-2 border-t border-slate-100">
+              <Btn v="primary" onClick={handleSendSolicitud} disabled={submitting}>
+                Enviar Solicitud
+              </Btn>
+              <Btn v="secondary" onClick={() => setSolicitudOpen(false)}>
+                Cancelar
+              </Btn>
+            </div>
+          </div>
+        </Modal>
+      </td>
+    </tr>
+  );
+}
+
 // ─── Manuales ─────────────────────────────────────────────────────────────────
 
 function ManualesUsuarios({ canUpload = true }: { canUpload?: boolean }) {
@@ -2354,12 +4706,14 @@ function ManualesUsuarios({ canUpload = true }: { canUpload?: boolean }) {
   const [error, setError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [muColFilters, setMuColFilters] = useState({ modulo: "", titulo: "", version: "", fecha: "" });
   const [form, setForm] = useState({
     modulo: MODULOS[0] ?? "ADMISIONES",
     titulo: "",
     version: "",
     archivo: null as File | null,
   });
+
   useEffect(() => {
     api<ApiManual[]>("/manuales/").then(setItems).catch((err) => setError(err.message));
   }, []);
@@ -2412,11 +4766,11 @@ function ManualesUsuarios({ canUpload = true }: { canUpload?: boolean }) {
           </Btn>
         )}
       </div>
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-h-[600px] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              {['Módulo', 'Título', 'Versión', 'Fecha', 'Páginas', 'Descarga'].map((h) => (
+              {['Módulo', 'Título', 'Versión', 'Fecha', 'Páginas', 'Acciones'].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider"
@@ -2425,25 +4779,25 @@ function ManualesUsuarios({ canUpload = true }: { canUpload?: boolean }) {
                 </th>
               ))}
             </tr>
+            <tr className="bg-slate-100/90 border-t border-slate-200">
+              <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar módulo" onChange={(e) => setMuColFilters((p) => ({ ...p, modulo: e.target.value }))} /></th>
+              <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar título" onChange={(e) => setMuColFilters((p) => ({ ...p, titulo: e.target.value }))} /></th>
+              <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar versión" onChange={(e) => setMuColFilters((p) => ({ ...p, version: e.target.value }))} /></th>
+              <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar fecha" onChange={(e) => setMuColFilters((p) => ({ ...p, fecha: e.target.value }))} /></th>
+              <th className="px-4 py-1.5"></th>
+              <th className="px-4 py-1.5"></th>
+            </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {items.map((m) => (
-              <tr key={m.oid} className="hover:bg-slate-50/80 transition-colors">
-                <td className="px-4 py-3 text-xs font-bold text-[#0778ac]">{MODULO_LABELS[m.modulo] ?? m.modulo}</td>
-                <td className="px-4 py-3 font-medium text-slate-900">{m.titulo}</td>
-                <td className="px-4 py-3 text-slate-500 text-xs font-mono">v{m.version}</td>
-                <td className="px-4 py-3 text-slate-500 text-xs font-mono">{m.fecha_registro.slice(0, 10)}</td>
-                <td className="px-4 py-3 text-slate-500 text-xs font-mono">—</td>
-                <td className="px-4 py-3">
-                  {m.archivo ? (
-                    <a href={m.archivo} target="_blank" rel="noreferrer">
-                      <Btn v="primary" sm><Download size={13} /> PDF</Btn>
-                    </a>
-                  ) : (
-                    <span className="text-xs text-slate-400">Sin archivo</span>
-                  )}
-                </td>
-              </tr>
+            {items
+              .filter((m) =>
+                (!muColFilters.modulo || m.modulo.toLowerCase().includes(muColFilters.modulo.toLowerCase())) &&
+                (!muColFilters.titulo || m.titulo.toLowerCase().includes(muColFilters.titulo.toLowerCase())) &&
+                (!muColFilters.version || (m.version ?? "").toLowerCase().includes(muColFilters.version.toLowerCase())) &&
+                (!muColFilters.fecha || (m.fecha ?? "").toLowerCase().includes(muColFilters.fecha.toLowerCase()))
+              )
+              .map((m) => (
+              <ManualRow key={m.oid} m={m} />
             ))}
           </tbody>
         </table>
@@ -2506,6 +4860,112 @@ function ManualesUsuarios({ canUpload = true }: { canUpload?: boolean }) {
         </div>
       </Modal>
       )}
+    </div>
+  );
+}
+
+// ─── Solicitudes de Manuales Section (Coordinator / Admin) ────────────────────
+
+function SolicitudesManualesSection({ onError }: { onError: (msg: string) => void }) {
+  const [solicitudes, setSolicitudes] = useState<SolicitudManual[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [smColFilters, setSmColFilters] = useState({ manual: "", modulo: "", solicitante: "", area: "", fecha: "", estado: "" });
+
+  const fetchSolicitudes = () => {
+    setLoading(true);
+    api<SolicitudManual[]>("/manuales/solicitudes")
+      .then(setSolicitudes)
+      .catch((e) => onError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchSolicitudes();
+  }, []);
+
+  const handleAprobar = (oid: number) => {
+    api<SolicitudManual>(`/manuales/solicitudes/${oid}/aprobar`, { method: "PUT" })
+      .then((updated) => {
+        setSolicitudes((prev) => prev.map((s) => (s.oid === oid ? updated : s)));
+        toast.success("Solicitud aprobada por 30 minutos.");
+      })
+      .catch((e) => onError(e instanceof Error ? e.message : "Error al aprobar la solicitud."));
+  };
+
+  const filteredSolicitudes = solicitudes.filter((sol) =>
+    (!smColFilters.manual || (sol.manual_titulo ?? "").toLowerCase().includes(smColFilters.manual.toLowerCase())) &&
+    (!smColFilters.modulo || (sol.manual_modulo ?? "").toLowerCase().includes(smColFilters.modulo.toLowerCase())) &&
+    (!smColFilters.solicitante || sol.nombre_solicitante.toLowerCase().includes(smColFilters.solicitante.toLowerCase())) &&
+    (!smColFilters.area || sol.area.toLowerCase().includes(smColFilters.area.toLowerCase())) &&
+    (!smColFilters.fecha || (sol.fecha_solicitud ?? "").toLowerCase().includes(smColFilters.fecha.toLowerCase())) &&
+    (!smColFilters.estado || sol.estado.toLowerCase().includes(smColFilters.estado.toLowerCase()))
+  );
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader
+        title="Solicitudes de Descarga de Manuales"
+        subtitle="Administre las solicitudes de descarga de manuales de usuario. Al aprobar, el usuario tendrá 30 minutos para descargar el PDF."
+      />
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-h-[600px] overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+            <tr>
+              {["Manual", "Módulo", "Solicitante", "Área", "Descripción", "Fecha Solicitud", "Estado", "Acciones"].map((h) => (
+                <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">{h}</th>
+              ))}
+            </tr>
+            <tr className="bg-slate-100/90 border-t border-slate-200">
+              <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar manual" onChange={(e) => setSmColFilters((p) => ({ ...p, manual: e.target.value }))} /></th>
+              <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar módulo" onChange={(e) => setSmColFilters((p) => ({ ...p, modulo: e.target.value }))} /></th>
+              <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar solicitante" onChange={(e) => setSmColFilters((p) => ({ ...p, solicitante: e.target.value }))} /></th>
+              <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar área" onChange={(e) => setSmColFilters((p) => ({ ...p, area: e.target.value }))} /></th>
+              <th className="px-4 py-1.5"></th>
+              <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar fecha" onChange={(e) => setSmColFilters((p) => ({ ...p, fecha: e.target.value }))} /></th>
+              <th className="px-4 py-1.5">
+                <select className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" onChange={(e) => setSmColFilters((p) => ({ ...p, estado: e.target.value }))}>
+                  <option value="">Todos</option>
+                  <option value="Pendiente">Pendiente</option>
+                  <option value="Aprobado">Aprobado</option>
+                </select>
+              </th>
+              <th className="px-4 py-1.5"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {filteredSolicitudes.map((sol) => (
+              <tr key={sol.oid} className="hover:bg-slate-50/80 transition-colors">
+                <td className="px-4 py-3 font-semibold text-slate-900">{sol.manual_titulo}</td>
+                <td className="px-4 py-3 text-xs font-bold text-[#0778ac]">{sol.manual_modulo}</td>
+                <td className="px-4 py-3 text-slate-800">{sol.nombre_solicitante}</td>
+                <td className="px-4 py-3 text-slate-600">{sol.area}</td>
+                <td className="px-4 py-3 text-slate-600 max-w-xs">{sol.descripcion}</td>
+                <td className="px-4 py-3 text-slate-500 font-mono text-xs">{sol.fecha_solicitud?.slice(0, 16).replace("T", " ")}</td>
+                <td className="px-4 py-3">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-bold ${
+                    sol.estado === "Aprobado"
+                      ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                      : "bg-amber-100 text-amber-800 border border-amber-200"
+                  }`}>
+                    {sol.estado}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  {sol.estado === "Pendiente" ? (
+                    <Btn v="success" sm onClick={() => handleAprobar(sol.oid)}>
+                      <CheckCircle size={13} /> Aprobar (30 min)
+                    </Btn>
+                  ) : (
+                    <span className="text-xs text-slate-400 font-medium">Activo</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!loading && solicitudes.length === 0 && <EmptyState message="No hay solicitudes de manuales registradas." />}
+      </div>
     </div>
   );
 }
@@ -2602,6 +5062,7 @@ function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator
 export default function App() {
   const [module, setModule] = useState<"home" | "coordinator" | "validator" | "solicitud">("home");
   const [coordinatorLoggedIn, setCoordinatorLoggedIn] = useState(false);
+  const [loggedUser, setLoggedUser] = useState("");
   const [coordinatorLogin, setCoordinatorLogin] = useState({ usuario: "", password: "" });
   const [coordinatorLoginError, setCoordinatorLoginError] = useState("");
   const [coordinatorSection, setCoordinatorSection] = useState<CoordTab>("registro");
@@ -2625,12 +5086,12 @@ export default function App() {
   }, []);
 
   if (module === "home") {
-    return <ModuleSelector onSelect={setModule} />;
+    return <><Toaster /><ModuleSelector onSelect={setModule} /></>;
   }
 
   if (module === "solicitud") {
     return (
-      <div className="h-screen flex flex-col overflow-hidden" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <><Toaster /><div className="h-screen flex flex-col overflow-hidden" style={{ fontFamily: "'Inter', sans-serif" }}>
         <div className="bg-[#0778ac] text-white px-5 h-11 flex items-center justify-between shrink-0 border-b border-[#0778ac]/40">
           <div className="flex items-center gap-2.5">
             <Monitor size={16} className="text-white" />
@@ -2640,7 +5101,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => window.location.href = "https://syac.net.co/boletines/"}
+              onClick={() => window.open("https://syac.net.co/boletines/", "_blank")}
               className="rounded-full bg-white/15 text-white px-3 py-1.5 text-xs font-semibold hover:bg-white/20 transition-colors"
             >
               Boletines SYAC
@@ -2662,13 +5123,13 @@ export default function App() {
             canApprove={false}
           />
         </div>
-      </div>
+      </div></>
     );
   }
 
   if (module === "coordinator" && !coordinatorLoggedIn) {
     return (
-      <div className="min-h-screen bg-[#f8f9fa] flex flex-col items-center justify-center p-8 text-slate-900">
+      <><Toaster /><div className="min-h-screen bg-[#f8f9fa] flex flex-col items-center justify-center p-8 text-slate-900">
         <div className="w-full max-w-md rounded-3xl border border-[#0778ac]/20 bg-white p-8 shadow-xl">
           <h1 className="text-2xl font-semibold mb-3 text-[#0778ac]">Acceso Coordinador</h1>
           <p className="text-sm text-slate-600 mb-6">
@@ -2708,14 +5169,24 @@ export default function App() {
               </button>
               <button
                 onClick={() => {
-                  const validUser = coordinatorLogin.usuario.trim().toLowerCase() === "sistemas";
-                  const validPass = coordinatorLogin.password === "159357**Cesar**";
-                  if (!validUser || !validPass) {
+                  const user = coordinatorLogin.usuario.trim().toLowerCase();
+                  const pass = coordinatorLogin.password;
+                  let isValid = false;
+                  
+                  if (user === "sistemas" && pass === "159357**Cesar**") isValid = true;
+                  else if (user === "practicante" && pass === "Icvc2024") isValid = true;
+                  else if (user === "ingeniero" && pass === "159357**Cesar**") isValid = true;
+
+                  if (!isValid) {
                     setCoordinatorLoginError("Usuario o contraseña incorrectos.");
                     return;
                   }
                   setCoordinatorLoginError("");
+                  setLoggedUser(user);
                   setCoordinatorLoggedIn(true);
+                  if (user === "practicante") {
+                    setCoordinatorSection("solicitudParametro");
+                  }
                 }}
                 className="rounded-2xl bg-[#0778ac] px-5 py-3 text-sm font-semibold text-white hover:bg-[#056b95]"
               >
@@ -2724,7 +5195,7 @@ export default function App() {
             </div>
           </div>
         </div>
-      </div>
+      </div></>
     );
   }
 
@@ -2732,7 +5203,7 @@ export default function App() {
   const isValidator = module === "validator";
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <><Toaster /><div className="h-screen flex flex-col overflow-hidden" style={{ fontFamily: "'Inter', sans-serif" }}>
       {/* Global top bar */}
       <div className="bg-[#0778ac] text-white px-5 h-11 flex items-center justify-between shrink-0 border-b border-[#0778ac]/40">
         <div className="flex items-center gap-2.5">
@@ -2745,7 +5216,7 @@ export default function App() {
         </div>
         <div className="flex items-center gap-3">
             <button
-              onClick={() => window.location.href = "https://syac.net.co/boletines/"}
+              onClick={() => window.open("https://syac.net.co/boletines/", "_blank")}
               className="rounded-full bg-white/15 text-white px-3 py-1.5 text-xs font-semibold hover:bg-white/20 transition-colors"
             >
               Boletines SYAC
@@ -2771,6 +5242,7 @@ export default function App() {
             onError={setError}
             selectedSection={coordinatorSection}
             onSelectSection={setCoordinatorSection}
+            loggedUser={loggedUser}
           />
         ) : (
           <ValidatorModule
@@ -2781,6 +5253,6 @@ export default function App() {
           />
         ))}
       </div>
-    </div>
+    </div></>
   );
 }

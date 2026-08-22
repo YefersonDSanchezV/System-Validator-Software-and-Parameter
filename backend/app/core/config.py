@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     DB_USER: str
     DB_PASSWORD: str
 
+    DB_SERVER: str
+    DB_DATABASE: str
+    DB_USER_SQL: str
+    DB_PASSWORD_SQL: str
+    DB_DRIVER: str
+    DB_TRUST_CERTIFICATE: str
+
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
