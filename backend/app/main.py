@@ -37,6 +37,64 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+
+def initialize_database():
+    Base.metadata.create_all(bind=engine)
+
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE regaprobados ADD COLUMN IF NOT EXISTS cargo VARCHAR(200)"))
+        conn.execute(text("ALTER TABLE regrechazado ADD COLUMN IF NOT EXISTS cargo VARCHAR(200)"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS total_valor INTEGER"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS total_unidad VARCHAR(20)"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ALTER COLUMN fecha_apertura DROP NOT NULL"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ALTER COLUMN fecha_cierre DROP NOT NULL"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS hora_apertura VARCHAR(20)"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS hora_cierre VARCHAR(20)"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS area VARCHAR(200)"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS consecutivo VARCHAR(50)"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS motivo_rechazo TEXT"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS solicitud_extension VARCHAR(100)"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS observacion_resolucion TEXT"))
+
+        # Email recipient columns for configuracion_parametros
+        conn.execute(text("ALTER TABLE configuracion_parametros ADD COLUMN IF NOT EXISTS correos_historia_clinica TEXT"))
+        conn.execute(text("ALTER TABLE configuracion_parametros ADD COLUMN IF NOT EXISTS correos_enfermeria TEXT"))
+        conn.execute(text("ALTER TABLE configuracion_parametros ADD COLUMN IF NOT EXISTS correos_otros TEXT"))
+
+        # Backfill missing consecutivos
+        rows = conn.execute(text("SELECT oid, fecha_registro FROM solicitud_parametro WHERE consecutivo IS NULL ORDER BY oid ASC")).fetchall()
+        counts = {}
+        for r in rows:
+            dt = r[1] or datetime.now()
+            prefix = f"{dt.year}-{dt.month:02d}"
+            counts[prefix] = counts.get(prefix, 0) + 1
+            cons = f"{prefix}-{counts[prefix]:03d}"
+            conn.execute(text("UPDATE solicitud_parametro SET consecutivo = :cons WHERE oid = :oid"), {"cons": cons, "oid": r[0]})
+
+        # Migrate legacy estado values to 'Autorizado Solicitud Previa'
+        conn.execute(text("UPDATE solicitud_parametro SET estado = 'Autorizado Solicitud Previa' WHERE estado IN ('Habilitado por extensión', 'Habilitado por extension', 'Habilitado por extencion')"))
+
+        # Ensure default row in configuracion_parametros
+        conf_exists = conn.execute(text("SELECT id FROM configuracion_parametros LIMIT 1")).fetchone()
+        if not conf_exists:
+            conn.execute(text("""
+                INSERT INTO configuracion_parametros (id, hc_default, enf_hcrenf_default, enf_haplmed_default, hora_restablecimiento, auto_restablecer, tipos_habilitados, updated_at)
+                VALUES (1, 30, 48, 48, '20:05', true, '["Historia Clinica", "Enfermeria", "Otros"]'::json, NOW())
+            """))
+
+        conn.execute(text("ALTER TABLE boletines ADD COLUMN IF NOT EXISTS mes INTEGER"))
+        conn.execute(text("ALTER TABLE boletines ADD COLUMN IF NOT EXISTS anio INTEGER"))
+        conn.execute(text("UPDATE boletines SET mes = EXTRACT(MONTH FROM COALESCE(fecha, fecha_registro, NOW())) WHERE mes IS NULL"))
+        conn.execute(text("UPDATE boletines SET anio = EXTRACT(YEAR FROM COALESCE(fecha, fecha_registro, NOW())) WHERE anio IS NULL"))
+        conn.execute(text("ALTER TABLE boletines ALTER COLUMN mes SET NOT NULL"))
+        conn.execute(text("ALTER TABLE boletines ALTER COLUMN anio SET NOT NULL"))
+
+        # RegVersion new columns
+        conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS contenedor_bd VARCHAR(50)"))
+        conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS num_compilacion VARCHAR(100)"))
+        conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS fecha_compilacion TIMESTAMP"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(settings.UPLOAD_FOLDER, exist_ok=True)
@@ -44,6 +102,12 @@ async def lifespan(app: FastAPI):
     
     # Iniciar scheduler
     scheduler = init_scheduler()
+
+    try:
+        initialize_database()
+    except Exception as exc:
+        logger.exception("Error inicializando la base de datos")
+        raise RuntimeError("No se pudo inicializar la base de datos") from exc
     
     yield
     
@@ -73,63 +137,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Create tables if they do not exist yet
-Base.metadata.create_all(bind=engine)
-
-# Lightweight schema evolution for existing databases
-with engine.begin() as conn:
-    conn.execute(text("ALTER TABLE regaprobados ADD COLUMN IF NOT EXISTS cargo VARCHAR(200)"))
-    conn.execute(text("ALTER TABLE regrechazado ADD COLUMN IF NOT EXISTS cargo VARCHAR(200)"))
-    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS total_valor INTEGER"))
-    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS total_unidad VARCHAR(20)"))
-    conn.execute(text("ALTER TABLE solicitud_parametro ALTER COLUMN fecha_apertura DROP NOT NULL"))
-    conn.execute(text("ALTER TABLE solicitud_parametro ALTER COLUMN fecha_cierre DROP NOT NULL"))
-    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS hora_apertura VARCHAR(20)"))
-    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS hora_cierre VARCHAR(20)"))
-    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS area VARCHAR(200)"))
-    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS consecutivo VARCHAR(50)"))
-    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS motivo_rechazo TEXT"))
-    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS solicitud_extension VARCHAR(100)"))
-    conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS observacion_resolucion TEXT"))
-
-    # Email recipient columns for configuracion_parametros
-    conn.execute(text("ALTER TABLE configuracion_parametros ADD COLUMN IF NOT EXISTS correos_historia_clinica TEXT"))
-    conn.execute(text("ALTER TABLE configuracion_parametros ADD COLUMN IF NOT EXISTS correos_enfermeria TEXT"))
-    conn.execute(text("ALTER TABLE configuracion_parametros ADD COLUMN IF NOT EXISTS correos_otros TEXT"))
-
-    # Backfill missing consecutivos
-    rows = conn.execute(text("SELECT oid, fecha_registro FROM solicitud_parametro WHERE consecutivo IS NULL ORDER BY oid ASC")).fetchall()
-    counts = {}
-    for r in rows:
-        dt = r[1] or datetime.now()
-        prefix = f"{dt.year}-{dt.month:02d}"
-        counts[prefix] = counts.get(prefix, 0) + 1
-        cons = f"{prefix}-{counts[prefix]:03d}"
-        conn.execute(text("UPDATE solicitud_parametro SET consecutivo = :cons WHERE oid = :oid"), {"cons": cons, "oid": r[0]})
-
-    # Migrate legacy estado values to 'Autorizado Solicitud Previa'
-    conn.execute(text("UPDATE solicitud_parametro SET estado = 'Autorizado Solicitud Previa' WHERE estado IN ('Habilitado por extensión', 'Habilitado por extension', 'Habilitado por extencion')"))
-
-    # Ensure default row in configuracion_parametros
-    conf_exists = conn.execute(text("SELECT id FROM configuracion_parametros LIMIT 1")).fetchone()
-    if not conf_exists:
-        conn.execute(text("""
-            INSERT INTO configuracion_parametros (id, hc_default, enf_hcrenf_default, enf_haplmed_default, hora_restablecimiento, auto_restablecer, tipos_habilitados, updated_at)
-            VALUES (1, 30, 48, 48, '20:05', true, '["Historia Clinica", "Enfermeria", "Otros"]'::json, NOW())
-        """))
-
-    conn.execute(text("ALTER TABLE boletines ADD COLUMN IF NOT EXISTS mes INTEGER"))
-    conn.execute(text("ALTER TABLE boletines ADD COLUMN IF NOT EXISTS anio INTEGER"))
-    conn.execute(text("UPDATE boletines SET mes = EXTRACT(MONTH FROM COALESCE(fecha, fecha_registro, NOW())) WHERE mes IS NULL"))
-    conn.execute(text("UPDATE boletines SET anio = EXTRACT(YEAR FROM COALESCE(fecha, fecha_registro, NOW())) WHERE anio IS NULL"))
-    conn.execute(text("ALTER TABLE boletines ALTER COLUMN mes SET NOT NULL"))
-    conn.execute(text("ALTER TABLE boletines ALTER COLUMN anio SET NOT NULL"))
-
-    # RegVersion new columns
-    conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS contenedor_bd VARCHAR(50)"))
-    conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS num_compilacion VARCHAR(100)"))
-    conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS fecha_compilacion TIMESTAMP"))
 
 # Register routers
 app.include_router(versions.router, prefix="/api/v1")

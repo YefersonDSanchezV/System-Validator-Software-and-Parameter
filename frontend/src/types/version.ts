@@ -4,6 +4,7 @@ export interface Version {
   id: string;
   oid: number;
   titulo: string;
+  tituloBase: string;
   descripcion: string;
   enlace: string;
   fechaRegistro: string;
@@ -33,6 +34,7 @@ export const toVersion = (v: ApiVersion): Version => {
     id: `v${v.oid}`,
     oid: v.oid,
     titulo: displayTitle,
+    tituloBase: v.titulo,
     descripcion: v.descripcion,
     enlace: v.enlace,
     fechaRegistro: v.fecha_registro?.slice(0, 10) ?? "",

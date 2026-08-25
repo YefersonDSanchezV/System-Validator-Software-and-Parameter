@@ -1,4 +1,5 @@
 import logging
+from ipaddress import ip_address
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -30,6 +31,62 @@ def detect_modulo(path: str) -> str:
     return "General"
 
 
+def _is_valid_ip(value: str) -> bool:
+    try:
+        ip_address(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _parse_forwarded_header(value: str | None) -> list[str]:
+    if not value:
+        return []
+
+    candidates: list[str] = []
+    for part in value.split(","):
+        for item in part.split(";"):
+            item = item.strip()
+            if not item.lower().startswith("for="):
+                continue
+            raw_ip = item[4:].strip().strip('"')
+            if raw_ip.startswith("[") and "]" in raw_ip:
+                raw_ip = raw_ip[1:raw_ip.index("]")]
+            elif ":" in raw_ip and raw_ip.count(":") == 1:
+                raw_ip = raw_ip.split(":", 1)[0]
+            if _is_valid_ip(raw_ip):
+                candidates.append(raw_ip)
+    return candidates
+
+
+def extract_client_ip(request: Request) -> str:
+    header_candidates: list[str] = []
+
+    forwarded = _parse_forwarded_header(request.headers.get("forwarded"))
+    if forwarded:
+        header_candidates.extend(forwarded)
+
+    x_forwarded_for = request.headers.get("x-forwarded-for")
+    if x_forwarded_for:
+        for part in x_forwarded_for.split(","):
+            candidate = part.strip()
+            if _is_valid_ip(candidate):
+                header_candidates.append(candidate)
+
+    for header_name in ("x-real-ip", "x-client-ip", "x-original-forwarded-for", "true-client-ip", "cf-connecting-ip"):
+        candidate = request.headers.get(header_name)
+        if candidate and _is_valid_ip(candidate.strip()):
+            header_candidates.append(candidate.strip())
+
+    for candidate in header_candidates:
+        return candidate
+
+    if request.client and request.client.host and _is_valid_ip(request.client.host):
+        return request.client.host
+
+    return "127.0.0.1"
+
+
 class AuditMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Process request
@@ -41,13 +98,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
             return response
 
         # Extract client IP
-        client_ip = request.headers.get("x-forwarded-for")
-        if client_ip:
-            client_ip = client_ip.split(",")[0].strip()
-        elif request.client and request.client.host:
-            client_ip = request.client.host
-        else:
-            client_ip = "127.0.0.1"
+        client_ip = extract_client_ip(request)
 
         # Extract user
         user = request.headers.get("x-user-role") or request.headers.get("x-user-name")

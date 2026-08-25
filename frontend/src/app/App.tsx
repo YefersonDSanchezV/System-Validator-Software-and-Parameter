@@ -9,7 +9,8 @@ import {
 import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { MODULOS, MODULO_LABELS, MODULOS_VALIDATOR } from "@/config/constants";
-import { api } from "@/lib/api/client";
+import { api, clearAuthenticatedApiUser, downloadApiFile, setAuthenticatedApiUser } from "@/lib/api/client";
+import { openPrintPreviewWindow } from "@/lib/print";
 import { Modal, StatusBadge, Btn, Field, FormInput, FormTextarea, SectionHeader, EmptyState, type BtnVariant } from "@/components/ui/custom";
 import { type EstadoVersion, type Version, type ApiVersion, type RestauracionDB, toVersion } from "@/types/version";
 import { type EstadoObs, type Observacion } from "@/types/observacion";
@@ -17,6 +18,168 @@ import { type ApiBoletin, type ApiBoletinPeriodo, type ApiBoletinImportResult } 
 import { type ApiManual, type SolicitudManual } from "@/types/manual";
 import { type ApiSolicitudParametro, type SolicitudParametro, type EstadoSolicitud, type ConfiguracionParametrosDTO, toSolicitudParametro } from "@/types/solicitud-parametro";
 import { type ParametrosEstado } from "@/types/parametros";
+
+const DEFAULT_DB_CONTAINERS = ["DGEMPRES99", "DGEMPRES98", "DGEMPRES10"] as const;
+const PAGE_SIZE_OPTIONS = [10, 20, 30] as const;
+
+function normalizeContainerName(value: string) {
+  return value.trim();
+}
+
+function toTimestamp(value?: string | null) {
+  if (!value) return Number.NEGATIVE_INFINITY;
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value.replace(" ", "T");
+  const parsed = Date.parse(normalized);
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
+function sortVersionsByCompilationDateDesc(items: Version[]) {
+  return [...items].sort((a, b) => {
+    const byCompilation = toTimestamp(b.fecha_compilacion) - toTimestamp(a.fecha_compilacion);
+    if (byCompilation !== 0) return byCompilation;
+
+    const byRegistration = toTimestamp(b.fechaRegistro) - toTimestamp(a.fechaRegistro);
+    if (byRegistration !== 0) return byRegistration;
+
+    return b.oid - a.oid;
+  });
+}
+
+function getContainerOptions(versions: Version[]) {
+  return Array.from(
+    new Set(
+      [...DEFAULT_DB_CONTAINERS, ...versions.map((version) => normalizeContainerName(version.contenedor_bd ?? ""))]
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b));
+}
+
+type TablePaginationResult<T> = {
+  rows: T[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  rangeStart: number;
+  rangeEnd: number;
+  setPage: React.Dispatch<React.SetStateAction<number>>;
+  setPageSize: (size: number) => void;
+};
+
+function useTablePagination<T>(rows: T[]): TablePaginationResult<T> {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSizeState] = useState<number>(PAGE_SIZE_OPTIONS[0]);
+  const totalItems = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
+  const rangeStart = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = totalItems === 0 ? 0 : Math.min(totalItems, page * pageSize);
+
+  return {
+    rows: rows.slice((page - 1) * pageSize, page * pageSize),
+    page,
+    pageSize,
+    totalItems,
+    totalPages,
+    rangeStart,
+    rangeEnd,
+    setPage,
+    setPageSize: (size: number) => {
+      setPageSizeState(size);
+      setPage(1);
+    },
+  };
+}
+
+function TablePaginationControls({
+  pagination,
+  itemLabel = "resultados",
+}: {
+  pagination: TablePaginationResult<unknown>;
+  itemLabel?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between bg-white">
+      <div className="flex items-center gap-2 text-sm text-slate-600">
+        <span>Mostrar</span>
+        <select
+          value={pagination.pageSize}
+          onChange={(e) => pagination.setPageSize(Number(e.target.value))}
+          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm"
+        >
+          {PAGE_SIZE_OPTIONS.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+        <span>{itemLabel}</span>
+      </div>
+
+      <div className="flex flex-col gap-2 text-sm text-slate-500 sm:items-end">
+        <span>
+          Mostrando {pagination.rangeStart}-{pagination.rangeEnd} de {pagination.totalItems} {itemLabel}
+        </span>
+        <div className="flex items-center gap-2">
+          <Btn
+            v="secondary"
+            sm
+            onClick={() => pagination.setPage((prev) => Math.max(1, prev - 1))}
+            disabled={pagination.page <= 1}
+          >
+            Anterior
+          </Btn>
+          <span className="min-w-24 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Pagina {pagination.page} de {pagination.totalPages}
+          </span>
+          <Btn
+            v="secondary"
+            sm
+            onClick={() => pagination.setPage((prev) => Math.min(pagination.totalPages, prev + 1))}
+            disabled={pagination.page >= pagination.totalPages}
+          >
+            Siguiente
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ContainerAutocompleteField({
+  label,
+  listId,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  listId: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">{label}</label>
+      <input
+        list={listId}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Seleccione o escriba un contenedor"
+        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+      />
+      <datalist id={listId}>
+        {options.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
+      <p className="mt-2 text-xs text-slate-500">Puede elegir un contenedor existente o escribir uno nuevo.</p>
+    </div>
+  );
+}
 
 function ParametroBadge({ title, abierto, valor, valor2 }: { title: string, abierto: boolean, valor: number, valor2?: number }) {
   const valueText = valor2 !== undefined ? `: ${valor}, : ${valor2}` : `${valor}`;
@@ -569,6 +732,7 @@ function SolicitudParametroSection({
     const matchEstado = !colFilters.estado || (item.estado || "").toLowerCase() === colFilters.estado.toLowerCase();
     return matchConsecutivo && matchTipo && matchSolicitante && matchArea && matchEstado;
   });
+  const solicitudPagination = useTablePagination(filteredSolicitudes);
 
   const handleSave = () => {
     setFormError(null);
@@ -713,7 +877,8 @@ function SolicitudParametroSection({
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-x-auto max-h-[600px] overflow-y-auto">
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm">
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
@@ -796,7 +961,7 @@ function SolicitudParametroSection({
                 </td>
               </tr>
               ) : (
-              filteredSolicitudes.map((item) => (
+              solicitudPagination.rows.map((item) => (
                 <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="px-4 py-3 text-xs font-bold text-[#0778ac] font-mono">{item.consecutivo}</td>
                   <td className="px-4 py-3 text-xs font-semibold text-slate-800">{item.tipoParametro}</td>
@@ -842,6 +1007,8 @@ function SolicitudParametroSection({
             )}
           </tbody>
         </table>
+        </div>
+        <TablePaginationControls pagination={solicitudPagination} itemLabel="solicitudes" />
       </div>
 
       <HabilitarParametroModal 
@@ -1566,6 +1733,7 @@ function AuditoriaSection() {
 
     window.open(`/api/v1/auditoria/exportar-excel?${queryParams.toString()}`, "_blank");
   };
+  const logPagination = useTablePagination(logs);
 
   return (
     <div className="space-y-6">
@@ -1645,7 +1813,8 @@ function AuditoriaSection() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto max-h-[600px] overflow-y-auto">
+        <div className="bg-white rounded-xl border border-slate-200">
+          <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
           <table className="w-full text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
@@ -1709,7 +1878,7 @@ function AuditoriaSection() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {logs.map((log) => {
+              {logPagination.rows.map((log) => {
                 const badgeColor =
                   log.tipo_accion === "POST" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
                   log.tipo_accion === "PUT" ? "bg-amber-100 text-amber-800 border-amber-200" :
@@ -1733,6 +1902,8 @@ function AuditoriaSection() {
               })}
             </tbody>
           </table>
+          </div>
+          <TablePaginationControls pagination={logPagination} itemLabel="registros" />
           {!loading && logs.length === 0 && <EmptyState message="No se encontraron registros de auditoría." />}
         </div>
       </div>
@@ -2056,6 +2227,7 @@ function CoordinatorModule({
 // ─── 1. Version Registration ──────────────────────────────────────────────────
 
 function VersionRegistration({
+  versions,
   setVersions,
   onError,
 }: {
@@ -2063,11 +2235,12 @@ function VersionRegistration({
   setVersions: React.Dispatch<React.SetStateAction<Version[]>>;
   onError: (message: string) => void;
 }) {
+  const containerOptions = getContainerOptions(versions);
   const [form, setForm] = useState({
     titulo: "",
     descripcion: "",
     enlace: "",
-    contenedor_bd: "DGEMPRES99",
+    contenedor_bd: DEFAULT_DB_CONTAINERS[0],
     num_compilacion: "",
     fecha_compilacion: "",
   });
@@ -2075,23 +2248,31 @@ function VersionRegistration({
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
-    if (!form.titulo.trim() || !form.descripcion.trim() || !form.enlace.trim()) return;
+    if (!form.titulo.trim() || !form.descripcion.trim() || !form.enlace.trim()) {
+      onError("Título, descripción y enlace son obligatorios para registrar la versión.");
+      return;
+    }
+
     setSaving(true);
     try {
       const created = await api<ApiVersion>("/versions/", {
         method: "POST",
         body: JSON.stringify({
           ...form,
+          titulo: form.titulo.trim(),
+          descripcion: form.descripcion.trim(),
+          enlace: form.enlace.trim(),
+          contenedor_bd: normalizeContainerName(form.contenedor_bd) || null,
           fecha_compilacion: form.fecha_compilacion ? form.fecha_compilacion : null,
           usuario: "Coordinador de Sistemas",
         }),
       });
-      setVersions((prev) => [toVersion(created), ...prev]);
+      setVersions((prev) => sortVersionsByCompilationDateDesc([toVersion(created), ...prev]));
       setForm({
         titulo: "",
         descripcion: "",
         enlace: "",
-        contenedor_bd: "DGEMPRES99",
+        contenedor_bd: DEFAULT_DB_CONTAINERS[0],
         num_compilacion: "",
         fecha_compilacion: "",
       });
@@ -2119,18 +2300,13 @@ function VersionRegistration({
             value={form.titulo}
             onChange={(e) => setForm({ ...form, titulo: e.target.value })}
           />
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Contenedor de Base de Datos</label>
-            <select
-              value={form.contenedor_bd}
-              onChange={(e) => setForm({ ...form, contenedor_bd: e.target.value })}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
-            >
-              <option value="DGEMPRES99">DGEMPRES99</option>
-              <option value="DGEMPRES98">DGEMPRES98</option>
-              <option value="DGEMPRES10">DGEMPRES10</option>
-            </select>
-          </div>
+          <ContainerAutocompleteField
+            label="Contenedor de Base de Datos"
+            listId="version-registration-container-options"
+            value={form.contenedor_bd}
+            onChange={(value) => setForm({ ...form, contenedor_bd: value })}
+            options={containerOptions}
+          />
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -2201,7 +2377,7 @@ function RestaurarDBSection({
 
   const fetchRestauraciones = () => {
     setLoading(true);
-    api<RestauracionDB[]>("/versions/restauraciones")
+    api<RestauracionDB[]>(`/versions/restauraciones?_ts=${Date.now()}`, { cache: "no-store" })
       .then(setRestauraciones)
       .catch((e) => setFormError(e.message))
       .finally(() => setLoading(false));
@@ -2210,6 +2386,7 @@ function RestaurarDBSection({
   useEffect(() => {
     fetchRestauraciones();
   }, []);
+  const restauracionPagination = useTablePagination(restauraciones);
 
   const handleSave = () => {
     setFormError(null);
@@ -2226,8 +2403,8 @@ function RestaurarDBSection({
         compilacion_anclada_oid: compilacionOid ? Number(compilacionOid) : null,
       }),
     })
-      .then((created) => {
-        setRestauraciones((prev) => [created, ...prev]);
+      .then(() => {
+        fetchRestauraciones();
         setFechaUltimaCopia("");
         setCompilacionOid("");
         toast.success("Restauración de base de datos registrada exitosamente.");
@@ -2237,7 +2414,7 @@ function RestaurarDBSection({
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6">
       <SectionHeader
         title="Restauración de Base de Datos"
         subtitle="Registre y consulte los eventos de restauración de base de datos anclados a compilaciones."
@@ -2313,11 +2490,12 @@ function RestaurarDBSection({
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto max-h-[600px] overflow-y-auto">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-200 sticky top-0 bg-white z-20">
           <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Historial de Restauraciones de BD</h4>
         </div>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+        <table className="w-full min-w-[980px] text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-12 z-10">
             <tr>
               {["ID", "Contenedor BD", "Fecha Restauración", "Fecha Última Copia BD", "Compilación Anclada", "Usuario"].map((h) => (
@@ -2326,18 +2504,20 @@ function RestaurarDBSection({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {restauraciones.map((r) => (
+            {restauracionPagination.rows.map((r) => (
               <tr key={r.oid} className="hover:bg-slate-50/80 transition-colors">
-                <td className="px-4 py-3 font-mono text-xs text-slate-500">#{r.oid}</td>
-                <td className="px-4 py-3 font-bold text-[#0778ac]">{r.contenedor_bd}</td>
-                <td className="px-4 py-3 text-slate-700 font-mono text-xs">{r.fecha_hora_restauracion?.slice(0, 16).replace("T", " ")}</td>
-                <td className="px-4 py-3 text-slate-700 font-mono text-xs">{r.fecha_ultima_copia?.slice(0, 16).replace("T", " ")}</td>
-                <td className="px-4 py-3 text-slate-900 font-medium">{r.compilacion_titulo || "—"}</td>
-                <td className="px-4 py-3 text-slate-500 text-xs">{r.usuario || "—"}</td>
+                <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">#{r.oid}</td>
+                <td className="px-4 py-3 font-bold text-[#0778ac] whitespace-nowrap">{r.contenedor_bd}</td>
+                <td className="px-4 py-3 text-slate-700 font-mono text-xs whitespace-nowrap">{r.fecha_hora_restauracion?.slice(0, 16).replace("T", " ")}</td>
+                <td className="px-4 py-3 text-slate-700 font-mono text-xs whitespace-nowrap">{r.fecha_ultima_copia?.slice(0, 16).replace("T", " ")}</td>
+                <td className="px-4 py-3 text-slate-900 font-medium min-w-[240px]">{r.compilacion_titulo || "—"}</td>
+                <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap min-w-[120px]">{r.usuario || "—"}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
+        <TablePaginationControls pagination={restauracionPagination} itemLabel="restauraciones" />
         {!loading && restauraciones.length === 0 && <EmptyState message="No hay registros de restauración de base de datos." />}
       </div>
     </div>
@@ -2375,19 +2555,21 @@ function VersionQuery({
     titulo: "",
     descripcion: "",
     enlace: "",
-    contenedor_bd: "DGEMPRES99",
+    contenedor_bd: DEFAULT_DB_CONTAINERS[0],
     num_compilacion: "",
     fecha_compilacion: "",
   });
+  const containerOptions = getContainerOptions(versions);
+  const versionPagination = useTablePagination(filteredVersions);
 
   const isCoordinator = loggedUser !== "practicante";
 
   function openEdit(v: Version) {
     setEditForm({
-      titulo: v.titulo,
+      titulo: v.tituloBase,
       descripcion: v.descripcion,
       enlace: v.enlace,
-      contenedor_bd: v.contenedor_bd || "DGEMPRES99",
+      contenedor_bd: v.contenedor_bd || DEFAULT_DB_CONTAINERS[0],
       num_compilacion: v.num_compilacion || "",
       fecha_compilacion: v.fecha_compilacion ? v.fecha_compilacion.slice(0, 16) : "",
     });
@@ -2396,15 +2578,25 @@ function VersionQuery({
 
   async function saveEdit() {
     if (!editModal) return;
+    if (!editForm.titulo.trim() || !editForm.descripcion.trim() || !editForm.enlace.trim()) {
+      onError("Título, descripción y enlace son obligatorios para actualizar la versión.");
+      return;
+    }
     try {
       const updated = await api<ApiVersion>(`/versions/${editModal.id.slice(1)}`, {
         method: "PUT",
         body: JSON.stringify({
           ...editForm,
+          titulo: editForm.titulo.trim(),
+          descripcion: editForm.descripcion.trim(),
+          enlace: editForm.enlace.trim(),
+          contenedor_bd: normalizeContainerName(editForm.contenedor_bd) || null,
           fecha_compilacion: editForm.fecha_compilacion ? editForm.fecha_compilacion : null,
         }),
       });
-      setVersions((prev) => prev.map((v) => (v.id === editModal.id ? toVersion(updated) : v)));
+      setVersions((prev) =>
+        sortVersionsByCompilationDateDesc(prev.map((v) => (v.id === editModal.id ? toVersion(updated) : v)))
+      );
       setEditModal(null);
     } catch (error) {
       onError(error instanceof Error ? error.message : "No fue posible actualizar la versión.");
@@ -2417,9 +2609,11 @@ function VersionQuery({
         method: "PUT",
         body: JSON.stringify({ estado: version.estado !== "activo" }),
       });
-      setVersions((prev) => prev.map((v) => (v.id === version.id ? toVersion(updated) : v)));
+    setVersions((prev) =>
+      sortVersionsByCompilationDateDesc(prev.map((v) => (v.id === version.id ? toVersion(updated) : v)))
+    );
     } catch (error) {
-      onError(error instanceof Error ? error.message : "No fue posible cambiar el estado.");
+    onError(error instanceof Error ? error.message : "No fue posible cambiar el estado.");
     }
   }
 
@@ -2429,7 +2623,8 @@ function VersionQuery({
         title="Consulta de Versiones del Sistema"
         subtitle={`${filteredVersions.length} de ${versions.length} versión(es) encontradas`}
       />
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto max-h-[600px] overflow-y-auto">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
@@ -2492,7 +2687,7 @@ function VersionQuery({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredVersions.map((v) => (
+            {versionPagination.rows.map((v) => (
               <tr key={v.id} className="hover:bg-slate-50/80 transition-colors">
                 <td className="px-4 py-3 font-medium text-slate-900 max-w-xs">{v.titulo}</td>
                 {isCoordinator && (
@@ -2542,6 +2737,8 @@ function VersionQuery({
             ))}
           </tbody>
         </table>
+        </div>
+        <TablePaginationControls pagination={versionPagination} itemLabel="versiones" />
       </div>
 
       <Modal open={!!detailsModal} onClose={() => setDetailsModal(null)} title="Detalles de la Versión">
@@ -2582,18 +2779,13 @@ function VersionQuery({
               onChange={(e) => setEditForm({ ...editForm, titulo: e.target.value })}
             />
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Contenedor de BD</label>
-              <select
-                value={editForm.contenedor_bd}
-                onChange={(e) => setEditForm({ ...editForm, contenedor_bd: e.target.value })}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
-              >
-                <option value="DGEMPRES99">DGEMPRES99</option>
-                <option value="DGEMPRES98">DGEMPRES98</option>
-                <option value="DGEMPRES10">DGEMPRES10</option>
-              </select>
-            </div>
+            <ContainerAutocompleteField
+              label="Contenedor de BD"
+              listId="version-edit-container-options"
+              value={editForm.contenedor_bd}
+              onChange={(value) => setEditForm({ ...editForm, contenedor_bd: value })}
+              options={containerOptions}
+            />
 
             <div className="grid grid-cols-2 gap-4">
               <FormInput
@@ -2675,6 +2867,9 @@ function ValidationDetails({
   const detailObs = moduleDetailModal
     ? obsForVersion.filter((o) => o.modulo === moduleDetailModal)
     : [];
+  const moduleRows = MODULOS.map((modulo) => ({ modulo, stats: getStats(modulo) }));
+  const modulePagination = useTablePagination(moduleRows);
+  const versionSelectorPagination = useTablePagination(versions);
 
   return (
     <div>
@@ -2693,7 +2888,8 @@ function ValidationDetails({
       </div>
 
       {selectedVersion && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-h-[600px] overflow-y-auto">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="max-h-[600px] overflow-y-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
@@ -2708,9 +2904,7 @@ function ValidationDetails({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {MODULOS.map((modulo) => {
-                const s = getStats(modulo);
-                return (
+              {modulePagination.rows.map(({ modulo, stats: s }) => (
                   <tr key={modulo} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-4 py-2.5 font-semibold text-slate-700 text-xs">{modulo}</td>
                     <td className="px-4 py-2.5 text-slate-500 font-mono text-xs">{s.ultima}</td>
@@ -2742,10 +2936,11 @@ function ValidationDetails({
                       </Btn>
                     </td>
                   </tr>
-                );
-              })}
+              ))}
             </tbody>
           </table>
+          </div>
+          <TablePaginationControls pagination={modulePagination} itemLabel="modulos" />
         </div>
       )}
 
@@ -2755,10 +2950,11 @@ function ValidationDetails({
         title="Seleccionar Versión"
         size="lg"
       >
+        <div className="overflow-hidden rounded-xl border border-slate-200">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {["Título", "Fecha Registro", "Estado", "Acción"].map((h) => (
+              {["Título", "Fecha Compilación", "Estado", "Acción"].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider"
@@ -2769,10 +2965,10 @@ function ValidationDetails({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {versions.map((v) => (
+            {versionSelectorPagination.rows.map((v) => (
               <tr key={v.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3 font-medium text-slate-900">{v.titulo}</td>
-                <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fechaRegistro}</td>
+                <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fecha_compilacion || "—"}</td>
                 <td className="px-4 py-3">
                   <StatusBadge estado={v.estado} />
                 </td>
@@ -2792,6 +2988,8 @@ function ValidationDetails({
             ))}
           </tbody>
         </table>
+        <TablePaginationControls pagination={versionSelectorPagination} itemLabel="versiones" />
+        </div>
       </Modal>
 
       <Modal
@@ -2912,6 +3110,58 @@ function ReportFirmas({
   const [rfColFilters, setRfColFilters] = useState({ nombre: "", cargo: "", modulo: "", fechaHora: "", estado: "" });
   const version = versions.find((v) => v.id === selectedVid);
   const filteredObs = observaciones.filter((o) => o.versionId === selectedVid);
+  const filteredReportRows = filteredObs.filter((o) =>
+    (!rfColFilters.nombre || o.nombre.toLowerCase().includes(rfColFilters.nombre.toLowerCase())) &&
+    (!rfColFilters.cargo || (o.cargo ?? "").toLowerCase().includes(rfColFilters.cargo.toLowerCase())) &&
+    (!rfColFilters.modulo || o.modulo.toLowerCase().includes(rfColFilters.modulo.toLowerCase())) &&
+    (!rfColFilters.fechaHora || o.fechaHora.toLowerCase().includes(rfColFilters.fechaHora.toLowerCase())) &&
+    (!rfColFilters.estado || o.estado === rfColFilters.estado)
+  );
+  const reportObsPagination = useTablePagination(filteredReportRows);
+
+  async function downloadPdfReport() {
+    if (!version) return;
+
+    const now = new Date();
+    const end = new Date(now.getTime() + 60 * 60 * 1000);
+    const formatDate = (value: Date) => value.toLocaleDateString("es-CO");
+    const formatTime = (value: Date) => value.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
+    const obsByModulo = new Set(filteredObs.map((o) => o.modulo));
+    const modulesForReport = [
+      ...MODULOS.map((m) => MODULO_LABELS[m] ?? m),
+      ...[...obsByModulo].filter((m) => !MODULOS.map((x) => MODULO_LABELS[x] ?? x).includes(m)),
+    ];
+    const asistenciaMap = new Map<string, { nombre: string; cargo: string; modulo: string; fecha_hora: string; estado: string; tiene_firma: boolean }>();
+
+    filteredObs.forEach((o) => {
+      const key = `${o.nombre}__${o.cargo ?? ""}__${o.modulo}__${o.fechaHora}__${o.estado}`;
+      if (!asistenciaMap.has(key)) {
+        asistenciaMap.set(key, {
+          nombre: o.nombre,
+          cargo: o.cargo ?? "",
+          modulo: MODULO_LABELS[o.modulo] ?? o.modulo,
+          fecha_hora: o.fechaHora,
+          estado: o.estado,
+          tiene_firma: Boolean(o.firma),
+        });
+      }
+    });
+
+    await downloadApiFile("/versions/reportes/firmas/pdf", "reporte_firmas_validacion.pdf", {
+      method: "POST",
+      body: JSON.stringify({
+        version_titulo: version.titulo,
+        version_descripcion: version.descripcion,
+        fecha_reunion: formatDate(now),
+        hora_inicio: formatTime(now),
+        hora_fin: formatTime(end),
+        conclusion: reportContext.conclusion,
+        observacion: reportContext.observacion,
+        temas: modulesForReport,
+        filas: [...asistenciaMap.values()],
+      }),
+    });
+  }
 
   function generatePDF() {
     if (!version) return;
@@ -2950,10 +3200,11 @@ function ReportFirmas({
       )
       .join("");
 
-    const win = window.open("", "_blank");
-    if (!win) return;
-    win.document.write(`<!DOCTYPE html><html><head><title>Acta de Reunión</title>
-<style>
+    const previewWindow = openPrintPreviewWindow({
+      title: "Acta de Reunion",
+      previewTitle: "Vista previa del acta de reunion",
+      downloadButtonLabel: "Descargar PDF",
+      styles: `
   body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;font-size:12px}
   h1{font-size:26px;margin:0;color:#334155}
   .meta{display:flex;justify-content:space-between;align-items:center;border:1px solid #111}
@@ -2975,7 +3226,8 @@ function ReportFirmas({
   .institutional-signatures{margin-top:24px;page-break-inside:avoid}
   .footer-strip-img{display:block;width:100%;height:auto;border:1px solid #111}
   @media print{body{padding:10px}}
-</style></head><body>
+`,
+      bodyHtml: `
 <div class="header-block">
   <div>
     <img class="header-logo-img" src="${reportLogoUrl}" alt="Logo institucional" onerror="this.style.display='none';document.getElementById('logo-fallback').style.display='block';"/>
@@ -3040,9 +3292,14 @@ function ReportFirmas({
   <div id="footer-fallback" class="image-fallback">Falta la imagen: src/image/firmas.png</div>
 </div>
 
-</body></html>`);
-    win.document.close();
-    setTimeout(() => win.print(), 300);
+`,
+    });
+
+    previewWindow?.document.getElementById("preview-download-button")?.addEventListener("click", () => {
+      void downloadPdfReport().catch((error) => {
+        toast.error(error instanceof Error ? error.message : "No fue posible descargar el PDF.");
+      });
+    });
   }
 
   return (
@@ -3075,7 +3332,7 @@ function ReportFirmas({
             onClick={() => setReportContextOpen(true)}
             disabled={!selectedVid || filteredObs.length === 0}
           >
-            <Printer size={15} /> Generar PDF
+            <Printer size={15} /> Ver vista previa
           </Btn>
         </div>
 
@@ -3083,6 +3340,7 @@ function ReportFirmas({
           (filteredObs.length === 0 ? (
             <EmptyState message="No hay observaciones registradas para esta versión." />
           ) : (
+            <div className="overflow-hidden rounded-xl border border-slate-200">
             <div className="max-h-[500px] overflow-y-auto overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
@@ -3113,17 +3371,9 @@ function ReportFirmas({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredObs
-                    .filter((o) =>
-                      (!rfColFilters.nombre || o.nombre.toLowerCase().includes(rfColFilters.nombre.toLowerCase())) &&
-                      (!rfColFilters.cargo || (o.cargo ?? "").toLowerCase().includes(rfColFilters.cargo.toLowerCase())) &&
-                      (!rfColFilters.modulo || o.modulo.toLowerCase().includes(rfColFilters.modulo.toLowerCase())) &&
-                      (!rfColFilters.fechaHora || o.fechaHora.toLowerCase().includes(rfColFilters.fechaHora.toLowerCase())) &&
-                      (!rfColFilters.estado || o.estado === rfColFilters.estado)
-                    )
-                    .map((o, i) => (
+                  {reportObsPagination.rows.map((o, i) => (
                       <tr key={o.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
+                        <td className="px-4 py-3 text-slate-400 text-xs">{reportObsPagination.rangeStart + i}</td>
                         <td className="px-4 py-3 font-medium text-slate-900">{o.nombre}</td>
                         <td className="px-4 py-3 text-xs text-slate-600">{o.cargo ?? "—"}</td>
                         <td className="px-4 py-3 text-xs text-slate-600 font-medium">{o.modulo}</td>
@@ -3142,6 +3392,8 @@ function ReportFirmas({
                     ))}
                 </tbody>
               </table>
+            </div>
+            <TablePaginationControls pagination={reportObsPagination} itemLabel="registros" />
             </div>
           ))}
       </div>
@@ -3171,7 +3423,7 @@ function ReportFirmas({
               }}
               disabled={!reportContext.conclusion.trim() || !reportContext.observacion.trim()}
             >
-              <Printer size={15} /> Generar Informe
+              <Printer size={15} /> Ver vista previa
             </Btn>
             <Btn v="secondary" onClick={() => setReportContextOpen(false)}>
               Cancelar
@@ -3218,12 +3470,36 @@ function ReportDetalles({
 
   const availableModulos = [...new Set(baseObs.map((o) => o.modulo))].sort();
 
-  function generatePDF() {
-    const win = window.open("", "_blank");
-    if (!win) return;
+  async function downloadPdfReport() {
     const subtitleText = selectedVid === "todas" ? "Todas las versiones publicadas" : (version?.titulo ?? "");
-    win.document.write(`<!DOCTYPE html><html><head><title>Reporte de Validación</title>
-<style>
+
+    await downloadApiFile("/versions/reportes/detalles/pdf", "reporte_detalles_validacion.pdf", {
+      method: "POST",
+      body: JSON.stringify({
+        titulo: "Reporte de Detalles de Validación",
+        subtitulo: subtitleText,
+        generado_en: new Date().toLocaleDateString("es-CO", { dateStyle: "long" }),
+        filas: filteredObs.map((o) => ({
+          version_titulo: o.versionTitulo || o.versionId,
+          modulo: MODULO_LABELS[o.modulo] ?? o.modulo,
+          fecha_hora: o.fechaHora,
+          estado: o.estado,
+          nombre: o.nombre,
+          observacion: o.observacion,
+          incidencia: o.incidencia || null,
+          ruta: o.ruta || null,
+        })),
+      }),
+    });
+  }
+
+  function generatePDF() {
+    const subtitleText = selectedVid === "todas" ? "Todas las versiones publicadas" : (version?.titulo ?? "");
+    const previewWindow = openPrintPreviewWindow({
+      title: "Reporte de Validacion",
+      previewTitle: "Vista previa del reporte de validacion",
+      downloadButtonLabel: "Descargar PDF",
+      styles: `
   body{font-family:Arial,sans-serif;padding:40px;color:#0f172a;font-size:13px}
   h1{color:#0f2d52;font-size:18px;margin-bottom:4px}
   .sub{color:#64748b;font-size:12px;margin-bottom:28px}
@@ -3238,7 +3514,8 @@ function ReportDetalles({
   .text{font-size:13px;color:#334155;line-height:1.5;margin-top:8px}
   .extra{font-size:11px;color:#64748b;margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0}
   @media print{body{padding:20px}}
-</style></head><body>
+`,
+      bodyHtml: `
 <h1>Reporte de Detalles de Validación</h1>
 <div class="sub">${subtitleText} &nbsp;|&nbsp; Generado: ${new Date().toLocaleDateString("es-CO", { dateStyle: "long" })}</div>
 ${filteredObs
@@ -3254,9 +3531,14 @@ ${filteredObs
 </div>`
   )
   .join("")}
-</body></html>`);
-    win.document.close();
-    setTimeout(() => win.print(), 300);
+`,
+    });
+
+    previewWindow?.document.getElementById("preview-download-button")?.addEventListener("click", () => {
+      void downloadPdfReport().catch((error) => {
+        toast.error(error instanceof Error ? error.message : "No fue posible descargar el PDF.");
+      });
+    });
   }
 
   return (
@@ -3324,7 +3606,7 @@ ${filteredObs
               disabled={filteredObs.length === 0}
               className="w-full justify-center"
             >
-              <Printer size={15} /> Generar PDF ({filteredObs.length})
+              <Printer size={15} /> Ver vista previa ({filteredObs.length})
             </Btn>
           </div>
         </div>
@@ -3565,6 +3847,15 @@ function ValidationRegistration({
 
   const obsCountForVersion = (vid: string) =>
     observaciones.filter((o) => o.versionId === vid).length;
+  const filteredValidationVersions = versions.filter((v) => {
+    const validationDate = (v.fecha_compilacion || v.fechaRegistro || "").toLowerCase();
+    return (
+      (!vrColFilters.titulo || v.titulo.toLowerCase().includes(vrColFilters.titulo.toLowerCase())) &&
+      (!vrColFilters.fecha || validationDate.includes(vrColFilters.fecha.toLowerCase())) &&
+      (!vrColFilters.estado || v.estado === vrColFilters.estado)
+    );
+  });
+  const validationPagination = useTablePagination(filteredValidationVersions);
 
   return (
     <div>
@@ -3572,11 +3863,12 @@ function ValidationRegistration({
         title="Registro de Validación del Sistema"
         subtitle="Versiones disponibles para validación. Registre sus observaciones, aprobaciones o rechazos."
       />
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-h-[600px] overflow-y-auto">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="max-h-[600px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              {["Título Versión", "Fecha Registro", "Estado", "Enlace", "Obs.", "Acciones"].map((h) => (
+              {["Título Versión", "Fecha Compilación", "Estado", "Enlace", "Obs.", "Acciones"].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider"
@@ -3602,16 +3894,10 @@ function ValidationRegistration({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {versions
-              .filter((v) =>
-                (!vrColFilters.titulo || v.titulo.toLowerCase().includes(vrColFilters.titulo.toLowerCase())) &&
-                (!vrColFilters.fecha || v.fechaRegistro.toLowerCase().includes(vrColFilters.fecha.toLowerCase())) &&
-                (!vrColFilters.estado || v.estado === vrColFilters.estado)
-              )
-              .map((v) => (
+            {validationPagination.rows.map((v) => (
               <tr key={v.id} className="hover:bg-slate-50/80 transition-colors">
                 <td className="px-4 py-3 font-medium text-slate-900 max-w-xs">{v.titulo}</td>
-                <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fechaRegistro}</td>
+                <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fecha_compilacion || "—"}</td>
                 <td className="px-4 py-3">
                   <StatusBadge estado={v.estado} />
                 </td>
@@ -3655,6 +3941,8 @@ function ValidationRegistration({
             ))}
           </tbody>
         </table>
+        </div>
+        <TablePaginationControls pagination={validationPagination} itemLabel="versiones" />
       </div>
 
       {/* Consult version modal */}
@@ -4207,6 +4495,7 @@ function Boletines({ canUpload = true }: { canUpload?: boolean }) {
 
     return byConsecutivo && byModulo && byFecha && byOpcion && byImpacto && byCategoria && byClaseDoc && byAsunto;
   });
+  const boletinPagination = useTablePagination(filteredItems);
 
   const handleOpenDetail = (item: ApiBoletin) => {
     setSelectedBoletin(item);
@@ -4310,11 +4599,13 @@ function Boletines({ canUpload = true }: { canUpload?: boolean }) {
           </div>
         </div>
       </div>
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto max-h-[600px] overflow-y-auto">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
         {error && <EmptyState message={error} />}
         {!error && loading && <EmptyState message="Cargando boletines..." />}
         {!error && !loading && items.length === 0 && <EmptyState message="No hay boletines para el periodo seleccionado." />}
         {!error && !loading && items.length > 0 && (
+          <>
+          <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
           <table className="w-full text-sm min-w-[960px] table-fixed">
             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
@@ -4438,7 +4729,7 @@ function Boletines({ canUpload = true }: { canUpload?: boolean }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredItems.map((b) => (
+              {boletinPagination.rows.map((b) => (
                 <tr key={b.oid} className="hover:bg-slate-50/70">
                   <td className="px-3 py-2 text-center">
                     <Btn v="secondary" sm onClick={() => handleOpenDetail(b)}>
@@ -4464,6 +4755,9 @@ function Boletines({ canUpload = true }: { canUpload?: boolean }) {
               )}
             </tbody>
           </table>
+          </div>
+          <TablePaginationControls pagination={boletinPagination} itemLabel="boletines" />
+          </>
         )}
       </div>
 
@@ -4717,6 +5011,13 @@ function ManualesUsuarios({ canUpload = true }: { canUpload?: boolean }) {
   useEffect(() => {
     api<ApiManual[]>("/manuales/").then(setItems).catch((err) => setError(err.message));
   }, []);
+  const filteredManuales = items.filter((m) =>
+    (!muColFilters.modulo || m.modulo.toLowerCase().includes(muColFilters.modulo.toLowerCase())) &&
+    (!muColFilters.titulo || m.titulo.toLowerCase().includes(muColFilters.titulo.toLowerCase())) &&
+    (!muColFilters.version || (m.version ?? "").toLowerCase().includes(muColFilters.version.toLowerCase())) &&
+    (!muColFilters.fecha || (m.fecha ?? "").toLowerCase().includes(muColFilters.fecha.toLowerCase()))
+  );
+  const manualPagination = useTablePagination(filteredManuales);
 
   async function handleSubmit() {
     if (!form.titulo.trim()) {
@@ -4766,7 +5067,8 @@ function ManualesUsuarios({ canUpload = true }: { canUpload?: boolean }) {
           </Btn>
         )}
       </div>
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-h-[600px] overflow-y-auto">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="max-h-[600px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
@@ -4789,18 +5091,13 @@ function ManualesUsuarios({ canUpload = true }: { canUpload?: boolean }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {items
-              .filter((m) =>
-                (!muColFilters.modulo || m.modulo.toLowerCase().includes(muColFilters.modulo.toLowerCase())) &&
-                (!muColFilters.titulo || m.titulo.toLowerCase().includes(muColFilters.titulo.toLowerCase())) &&
-                (!muColFilters.version || (m.version ?? "").toLowerCase().includes(muColFilters.version.toLowerCase())) &&
-                (!muColFilters.fecha || (m.fecha ?? "").toLowerCase().includes(muColFilters.fecha.toLowerCase()))
-              )
-              .map((m) => (
+            {manualPagination.rows.map((m) => (
               <ManualRow key={m.oid} m={m} />
             ))}
           </tbody>
         </table>
+        </div>
+        <TablePaginationControls pagination={manualPagination} itemLabel="manuales" />
         {error && <EmptyState message={error} />}
         {!error && items.length === 0 && <EmptyState message="No hay manuales publicados." />}
       </div>
@@ -4900,6 +5197,7 @@ function SolicitudesManualesSection({ onError }: { onError: (msg: string) => voi
     (!smColFilters.fecha || (sol.fecha_solicitud ?? "").toLowerCase().includes(smColFilters.fecha.toLowerCase())) &&
     (!smColFilters.estado || sol.estado.toLowerCase().includes(smColFilters.estado.toLowerCase()))
   );
+  const solicitudManualPagination = useTablePagination(filteredSolicitudes);
 
   return (
     <div className="space-y-6">
@@ -4908,7 +5206,8 @@ function SolicitudesManualesSection({ onError }: { onError: (msg: string) => voi
         subtitle="Administre las solicitudes de descarga de manuales de usuario. Al aprobar, el usuario tendrá 30 minutos para descargar el PDF."
       />
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-h-[600px] overflow-y-auto">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="max-h-[600px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
@@ -4934,7 +5233,7 @@ function SolicitudesManualesSection({ onError }: { onError: (msg: string) => voi
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredSolicitudes.map((sol) => (
+            {solicitudManualPagination.rows.map((sol) => (
               <tr key={sol.oid} className="hover:bg-slate-50/80 transition-colors">
                 <td className="px-4 py-3 font-semibold text-slate-900">{sol.manual_titulo}</td>
                 <td className="px-4 py-3 text-xs font-bold text-[#0778ac]">{sol.manual_modulo}</td>
@@ -4964,6 +5263,8 @@ function SolicitudesManualesSection({ onError }: { onError: (msg: string) => voi
             ))}
           </tbody>
         </table>
+        </div>
+        <TablePaginationControls pagination={solicitudManualPagination} itemLabel="solicitudes" />
         {!loading && solicitudes.length === 0 && <EmptyState message="No hay solicitudes de manuales registradas." />}
       </div>
     </div>
@@ -5002,7 +5303,7 @@ function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator
             <Settings size={22} className="text-[#0778ac]" />
           </div>
           <h2 className="text-base font-bold text-slate-900 mb-2">
-            Coordinador de Sistemas
+            Adminsitrador de Sistemas
           </h2>
           <p className="text-slate-600 text-sm leading-relaxed">
             Gestión de versiones del sistema, consulta de validaciones por módulo y generación de reportes ejecutivos.
@@ -5072,12 +5373,21 @@ export default function App() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
+  function returnToHome() {
+    clearAuthenticatedApiUser();
+    setCoordinatorLoggedIn(false);
+    setLoggedUser("");
+    setCoordinatorLogin({ usuario: "", password: "" });
+    setCoordinatorLoginError("");
+    setModule("home");
+  }
+
   useEffect(() => {
     let active = true;
     Promise.all([api<ApiVersion[]>("/versions/"), api<Observacion[]>("/observaciones/")])
       .then(([apiVersions, apiObservaciones]) => {
         if (!active) return;
-        setVersions(apiVersions.map(toVersion));
+        setVersions(sortVersionsByCompilationDateDesc(apiVersions.map(toVersion)));
         setObservaciones(apiObservaciones);
       })
       .catch((requestError) => active && setError(requestError instanceof Error ? requestError.message : "No fue posible conectar con el servidor."))
@@ -5107,7 +5417,7 @@ export default function App() {
               Boletines SYAC
             </button>
             <button
-              onClick={() => setModule("home")}
+              onClick={returnToHome}
               className="text-xs text-white/85 hover:text-white flex items-center gap-1 transition-colors font-medium"
             >
               <Home size={12} /> Inicio
@@ -5182,6 +5492,7 @@ export default function App() {
                     return;
                   }
                   setCoordinatorLoginError("");
+                  setAuthenticatedApiUser(user);
                   setLoggedUser(user);
                   setCoordinatorLoggedIn(true);
                   if (user === "practicante") {
@@ -5222,7 +5533,7 @@ export default function App() {
               Boletines SYAC
             </button>
           <button
-            onClick={() => setModule("home")}
+            onClick={returnToHome}
               className="text-xs text-white/85 hover:text-white flex items-center gap-1 transition-colors font-medium"
           >
             <Home size={12} /> Inicio

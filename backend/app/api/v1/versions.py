@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.version import (
@@ -6,9 +6,12 @@ from app.schemas.version import (
     VersionResponse,
     VersionUpdate,
     RestauracionDBCreate,
-    RestauracionDBResponse
+    RestauracionDBResponse,
+    ReporteFirmasPdfRequest,
+    ReporteDetallesPdfRequest,
 )
 from app.services.version_service import VersionService
+from app.utils.pdf_generator import generate_firmas_report_pdf, generate_detalles_report_pdf
 
 router = APIRouter(
     prefix="/versions",
@@ -26,6 +29,32 @@ def listar(db: Session = Depends(get_db)):
 @router.get("/restauraciones", response_model=list[RestauracionDBResponse])
 def listar_restauraciones(db: Session = Depends(get_db)):
     return service.listar_restauraciones(db)
+
+
+@router.post("/reportes/firmas/pdf")
+def descargar_reporte_firmas_pdf(data: ReporteFirmasPdfRequest):
+    try:
+        pdf_bytes = generate_firmas_report_pdf(data)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="reporte_firmas_validacion.pdf"'}
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="No fue posible generar el PDF del reporte de firmas.") from exc
+
+
+@router.post("/reportes/detalles/pdf")
+def descargar_reporte_detalles_pdf(data: ReporteDetallesPdfRequest):
+    try:
+        pdf_bytes = generate_detalles_report_pdf(data)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="reporte_detalles_validacion.pdf"'}
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="No fue posible generar el PDF del reporte de detalles.") from exc
 
 
 @router.post("/restauraciones", response_model=RestauracionDBResponse, status_code=201)

@@ -52,3 +52,42 @@ class RestauracionDBResponse(BaseModel):
     usuario: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ReporteFirmaFila(BaseModel):
+    nombre: str
+    cargo: Optional[str] = None
+    modulo: str
+    fecha_hora: str
+    estado: str
+    tiene_firma: bool = False
+
+
+class ReporteFirmasPdfRequest(BaseModel):
+    version_titulo: str
+    version_descripcion: str
+    fecha_reunion: str
+    hora_inicio: str
+    hora_fin: str
+    conclusion: str
+    observacion: str
+    temas: list[str]
+    filas: list[ReporteFirmaFila]
+
+
+class ReporteDetalleFila(BaseModel):
+    version_titulo: str
+    modulo: str
+    fecha_hora: str
+    estado: str
+    nombre: str
+    observacion: str
+    incidencia: Optional[str] = None
+    ruta: Optional[str] = None
+
+
+class ReporteDetallesPdfRequest(BaseModel):
+    titulo: str
+    subtitulo: str
+    generado_en: str
+    filas: list[ReporteDetalleFila]

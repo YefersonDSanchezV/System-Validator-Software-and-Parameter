@@ -1,3 +1,4 @@
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 from app.models.regversion import RegVersion
 
@@ -5,7 +6,16 @@ from app.models.regversion import RegVersion
 class VersionRepository:
 
     def get_all(self, db: Session):
-        return db.query(RegVersion).order_by(RegVersion.oid.desc()).all()
+        return (
+            db.query(RegVersion)
+            .order_by(
+                case((RegVersion.fecha_compilacion.is_(None), 1), else_=0),
+                RegVersion.fecha_compilacion.desc(),
+                RegVersion.fecha_registro.desc(),
+                RegVersion.oid.desc(),
+            )
+            .all()
+        )
 
     def get_by_id(self, db: Session, oid: int):
         return db.query(RegVersion).filter(RegVersion.oid == oid).first()

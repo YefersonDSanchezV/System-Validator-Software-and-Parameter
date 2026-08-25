@@ -22,9 +22,10 @@ import psycopg2
 
 DB_HOST = os.getenv("DB_HOST", "192.168.3.121")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
-DB_NAME = os.getenv("DB_NAME", "softwarevalidation")
+DB_NAME = os.getenv("DB_NAME", "softwarevalidation_pruebas")
 DB_USER = os.getenv("DB_USER", "sistemasicvc")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "icvc2024")
+
 
 def clean_database():
     print(f"Conectando a PostgreSQL en {DB_HOST}:{DB_PORT}/{DB_NAME} como {DB_USER}...")
@@ -65,6 +66,7 @@ def clean_database():
     except Exception as e:
         print(f"\n[ERROR CRÍTICO] Error al conectar o ejecutar la limpieza: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     clean_database()
