@@ -20,6 +20,8 @@ class SolicitudParametro(Base):
     total_unidad = Column(String(20), nullable=True)
     solicitante = Column(String(200), nullable=False)
     area = Column(String(200), nullable=True)
+    ingreso = Column(String(50), nullable=True)
+    medico = Column(String(200), nullable=True)
     estado = Column(String(50), nullable=False, default="Pendiente")
     motivo_rechazo = Column(Text, nullable=True)
     solicitud_extension = Column(String(100), nullable=True)
@@ -41,4 +43,3 @@ class ConfiguracionParametros(Base):
     correos_enfermeria = Column(Text, nullable=True)
     correos_otros = Column(Text, nullable=True)
     updated_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
-

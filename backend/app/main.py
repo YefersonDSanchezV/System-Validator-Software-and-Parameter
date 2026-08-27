@@ -51,10 +51,18 @@ def initialize_database():
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS hora_apertura VARCHAR(20)"))
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS hora_cierre VARCHAR(20)"))
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS area VARCHAR(200)"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS ingreso VARCHAR(50)"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS medico VARCHAR(200)"))
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS consecutivo VARCHAR(50)"))
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS motivo_rechazo TEXT"))
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS solicitud_extension VARCHAR(100)"))
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS observacion_resolucion TEXT"))
+
+        conn.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS nombre_equipo VARCHAR(255)"))
+        conn.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS usuario_windows_equipo VARCHAR(255)"))
+        conn.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS submodulo VARCHAR(50)"))
+        conn.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS payload_json TEXT"))
+        conn.execute(text("UPDATE audit_logs SET submodulo = 'LOGS_SISTEMAS' WHERE submodulo IS NULL"))
 
         # Email recipient columns for configuracion_parametros
         conn.execute(text("ALTER TABLE configuracion_parametros ADD COLUMN IF NOT EXISTS correos_historia_clinica TEXT"))

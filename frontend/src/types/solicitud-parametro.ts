@@ -18,6 +18,9 @@ export interface SolicitudParametro {
   totalUnidad: string | null;
   solicitante: string;
   area: string;
+  ingreso: string;
+  medico: string;
+  nombrePaciente: string;
   estado: EstadoSolicitud;
   motivoRechazo?: string | null;
   solicitudExtension?: string | null;
@@ -38,6 +41,9 @@ export interface ApiSolicitudParametro {
   total_unidad: string | null;
   solicitante: string;
   area: string | null;
+  ingreso: string | null;
+  medico: string | null;
+  nombre_paciente: string | null;
   estado: string;
   motivo_rechazo: string | null;
   solicitud_extension: string | null;
@@ -67,6 +73,9 @@ export const toSolicitudParametro = (item: ApiSolicitudParametro): SolicitudPara
   totalUnidad: item.total_unidad,
   solicitante: item.solicitante,
   area: item.area ?? "",
+  ingreso: item.ingreso ?? "",
+  medico: item.medico ?? "",
+  nombrePaciente: item.nombre_paciente ?? "",
   estado: item.estado as EstadoSolicitud,
   motivoRechazo: item.motivo_rechazo,
   solicitudExtension: item.solicitud_extension,

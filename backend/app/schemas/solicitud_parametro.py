@@ -35,6 +35,7 @@ class SolicitudExtensionAction(BaseModel):
 class SolicitudParametroResponse(SolicitudParametroCreate):
     oid: int
     consecutivo: Optional[str] = None
+    nombre_paciente: Optional[str] = None
     estado: str
     motivo_rechazo: Optional[str] = None
     solicitud_extension: Optional[str] = None

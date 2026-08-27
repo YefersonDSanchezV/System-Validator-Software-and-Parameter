@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     SMTP_USE_TLS: bool = True
     SMTP_USE_SSL: bool = False
 
+    VERSION_SMTP_HOST: Optional[str] = None
+    VERSION_SMTP_PORT: Optional[int] = None
+    VERSION_SMTP_USER: Optional[str] = None
+    VERSION_SMTP_PASSWORD: Optional[str] = None
+    VERSION_SMTP_FROM: Optional[str] = None
+    VERSION_SMTP_USE_TLS: Optional[bool] = None
+    VERSION_SMTP_USE_SSL: Optional[bool] = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True

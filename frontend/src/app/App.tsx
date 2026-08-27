@@ -1230,6 +1230,18 @@ function SolicitudParametroSection({
                 <p className="font-semibold text-slate-800 mt-1">{selectedSolicitud.area || "—"}</p>
               </div>
               <div className="rounded-xl border border-slate-200 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-slate-400">Paciente</p>
+                <p className="font-semibold text-slate-800 mt-1">{selectedSolicitud.nombrePaciente || "—"}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-slate-400">Ingreso</p>
+                <p className="font-semibold text-slate-800 mt-1">{selectedSolicitud.ingreso || "—"}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-slate-400">Médico</p>
+                <p className="font-semibold text-slate-800 mt-1">{selectedSolicitud.medico || "—"}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3">
                 <p className="text-[11px] uppercase tracking-wider text-slate-400">Apertura</p>
                 <p className="font-semibold text-slate-800 mt-1">
                   {selectedSolicitud.fechaApertura || "—"} {selectedSolicitud.horaApertura ? `(${selectedSolicitud.horaApertura})` : ""}
@@ -1685,33 +1697,49 @@ interface AuditLogItem {
   fecha_hora: string;
   tipo_accion: string;
   ip_equipo: string;
+  nombre_equipo?: string | null;
+  usuario_windows_equipo?: string | null;
   modulo: string;
+  submodulo: "LOGS_SISTEMAS" | "LOGS_DESCARGAS" | "LOGS_ACCESOS";
   usuario: string;
   detalle?: string | null;
+  payload_json?: Record<string, unknown> | null;
 }
 
-function AuditoriaSection() {
+type AuditSubmodulo = "LOGS_SISTEMAS" | "LOGS_DESCARGAS" | "LOGS_ACCESOS";
+
+function AuditoriaSection({ submodulo }: { submodulo: AuditSubmodulo }) {
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedLog, setSelectedLog] = useState<AuditLogItem | null>(null);
   const [filters, setFilters] = useState({
     tipo_accion: "",
     ip_equipo: "",
+    nombre_equipo: "",
+    usuario_windows_equipo: "",
     modulo: "",
     usuario: "",
     fecha_inicio: "",
     fecha_fin: "",
   });
 
-  const fetchLogs = () => {
-    setLoading(true);
+  const buildQueryParams = () => {
     const queryParams = new URLSearchParams();
+    queryParams.append("submodulo", submodulo);
     if (filters.tipo_accion) queryParams.append("tipo_accion", filters.tipo_accion);
     if (filters.ip_equipo) queryParams.append("ip_equipo", filters.ip_equipo);
+    if (filters.nombre_equipo) queryParams.append("nombre_equipo", filters.nombre_equipo);
+    if (filters.usuario_windows_equipo) queryParams.append("usuario_windows_equipo", filters.usuario_windows_equipo);
     if (filters.modulo) queryParams.append("modulo", filters.modulo);
     if (filters.usuario) queryParams.append("usuario", filters.usuario);
     if (filters.fecha_inicio) queryParams.append("fecha_inicio", filters.fecha_inicio);
     if (filters.fecha_fin) queryParams.append("fecha_fin", filters.fecha_fin);
+    return queryParams;
+  };
 
+  const fetchLogs = () => {
+    setLoading(true);
+    const queryParams = buildQueryParams();
     api<AuditLogItem[]>(`/auditoria/?${queryParams.toString()}`)
       .then(setLogs)
       .catch(() => setLogs([]))
@@ -1720,30 +1748,34 @@ function AuditoriaSection() {
 
   useEffect(() => {
     fetchLogs();
-  }, []);
+  }, [submodulo]);
 
   const handleExportExcel = () => {
-    const queryParams = new URLSearchParams();
-    if (filters.tipo_accion) queryParams.append("tipo_accion", filters.tipo_accion);
-    if (filters.ip_equipo) queryParams.append("ip_equipo", filters.ip_equipo);
-    if (filters.modulo) queryParams.append("modulo", filters.modulo);
-    if (filters.usuario) queryParams.append("usuario", filters.usuario);
-    if (filters.fecha_inicio) queryParams.append("fecha_inicio", filters.fecha_inicio);
-    if (filters.fecha_fin) queryParams.append("fecha_fin", filters.fecha_fin);
-
+    const queryParams = buildQueryParams();
     window.open(`/api/v1/auditoria/exportar-excel?${queryParams.toString()}`, "_blank");
   };
   const logPagination = useTablePagination(logs);
 
+  const submoduloTitles = {
+    LOGS_SISTEMAS: "Logs Sistemas",
+    LOGS_DESCARGAS: "Logs Descargas",
+    LOGS_ACCESOS: "Logs Accesos",
+  } as const;
+  const subtitleBySubmodulo = {
+    LOGS_SISTEMAS: "Historial de operaciones del sistema con detalle de solicitud/respuesta.",
+    LOGS_DESCARGAS: "Historial de descargas de documentos y reportes del sistema.",
+    LOGS_ACCESOS: "Historial de accesos de lectura (GET) a recursos del sistema.",
+  } as const;
+
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Auditoría de Acciones del Sistema"
-        subtitle="Consulte el historial completo de acciones (GET, POST, PUT, DELETE, OPTIONS) registradas en la aplicación."
+        title={`Auditoría - ${submoduloTitles[submodulo]}`}
+        subtitle={subtitleBySubmodulo[submodulo]}
       />
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
-        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6 items-end bg-slate-50 p-4 rounded-xl border border-slate-200">
+        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-9 items-end bg-slate-50 p-4 rounded-xl border border-slate-200">
           <div>
             <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Acción (HTTP)</label>
             <select
@@ -1768,6 +1800,26 @@ function AuditoriaSection() {
               onChange={(e) => setFilters({ ...filters, ip_equipo: e.target.value })}
               placeholder="Ej: 192.168.1.1"
               className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Nombre del Equipo</label>
+            <input
+            type="text"
+            value={filters.nombre_equipo}
+            onChange={(e) => setFilters({ ...filters, nombre_equipo: e.target.value })}
+            placeholder="Ej: EQUIPO-01"
+            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Usuario Windows</label>
+            <input
+            type="text"
+            value={filters.usuario_windows_equipo}
+            onChange={(e) => setFilters({ ...filters, usuario_windows_equipo: e.target.value })}
+            placeholder="Ej: sistemas"
+            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
             />
           </div>
 
@@ -1803,6 +1855,16 @@ function AuditoriaSection() {
             />
           </div>
 
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Hasta</label>
+            <input
+              type="date"
+              value={filters.fecha_fin}
+              onChange={(e) => setFilters({ ...filters, fecha_fin: e.target.value })}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
+            />
+          </div>
+
           <div className="flex gap-2">
             <Btn v="primary" sm onClick={fetchLogs} className="flex-1 justify-center">
               Filtrar
@@ -1818,63 +1880,9 @@ function AuditoriaSection() {
           <table className="w-full text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
-                {["#", "Fecha y Hora", "Acción", "Módulo", "Usuario", "IP del Equipo", "Detalle"].map((h) => (
+                {["#", "Fecha y Hora", "Acción", "IP del Equipo", "Nombre del Equipo", "Usuario Windows", "Módulo", "Detalle", "Acción"].map((h) => (
                   <th key={h} className="px-3 py-2.5 text-left font-bold text-slate-500 uppercase tracking-wider bg-slate-50">{h}</th>
                 ))}
-              </tr>
-              <tr className="bg-slate-100/90 border-t border-slate-200">
-                <th className="px-2 py-1 bg-slate-100"></th>
-                <th className="px-2 py-1 bg-slate-100 font-normal">
-                  <input
-                    type="text"
-                    placeholder="Filtrar fecha..."
-                    value={filters.fecha_inicio}
-                    onChange={(e) => setFilters({ ...filters, fecha_inicio: e.target.value })}
-                    className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-normal"
-                  />
-                </th>
-                <th className="px-2 py-1 bg-slate-100 font-normal">
-                  <select
-                    value={filters.tipo_accion}
-                    onChange={(e) => setFilters({ ...filters, tipo_accion: e.target.value })}
-                    className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-normal"
-                  >
-                    <option value="">Todas</option>
-                    <option value="GET">GET</option>
-                    <option value="POST">POST</option>
-                    <option value="PUT">PUT</option>
-                    <option value="DELETE">DELETE</option>
-                    <option value="OPTIONS">OPTIONS</option>
-                  </select>
-                </th>
-                <th className="px-2 py-1 bg-slate-100 font-normal">
-                  <input
-                    type="text"
-                    placeholder="Filtrar módulo..."
-                    value={filters.modulo}
-                    onChange={(e) => setFilters({ ...filters, modulo: e.target.value })}
-                    className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-normal"
-                  />
-                </th>
-                <th className="px-2 py-1 bg-slate-100 font-normal">
-                  <input
-                    type="text"
-                    placeholder="Filtrar usuario..."
-                    value={filters.usuario}
-                    onChange={(e) => setFilters({ ...filters, usuario: e.target.value })}
-                    className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-normal"
-                  />
-                </th>
-                <th className="px-2 py-1 bg-slate-100 font-normal">
-                  <input
-                    type="text"
-                    placeholder="Filtrar IP..."
-                    value={filters.ip_equipo}
-                    onChange={(e) => setFilters({ ...filters, ip_equipo: e.target.value })}
-                    className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-normal"
-                  />
-                </th>
-                <th className="px-2 py-1 bg-slate-100 font-normal"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1893,10 +1901,16 @@ function AuditoriaSection() {
                         {log.tipo_accion}
                       </span>
                     </td>
-                    <td className="px-3 py-2 font-bold text-[#0778ac]">{log.modulo}</td>
-                    <td className="px-3 py-2 text-slate-800">{log.usuario}</td>
                     <td className="px-3 py-2 font-mono text-slate-600">{log.ip_equipo}</td>
+                    <td className="px-3 py-2 text-slate-700">{log.nombre_equipo || "No disponible"}</td>
+                    <td className="px-3 py-2 text-slate-700">{log.usuario_windows_equipo || "No disponible"}</td>
+                    <td className="px-3 py-2 font-bold text-[#0778ac]">{log.modulo}</td>
                     <td className="px-3 py-2 text-slate-600 max-w-md truncate" title={log.detalle || ""}>{log.detalle || "—"}</td>
+                    <td className="px-3 py-2">
+                      <Btn v="ghost" sm onClick={() => setSelectedLog(log)}>
+                        <Eye size={13} /> Consultar
+                      </Btn>
+                    </td>
                   </tr>
                 );
               })}
@@ -1907,6 +1921,36 @@ function AuditoriaSection() {
           {!loading && logs.length === 0 && <EmptyState message="No se encontraron registros de auditoría." />}
         </div>
       </div>
+
+      <Modal
+        open={!!selectedLog}
+        onClose={() => setSelectedLog(null)}
+        title={`Detalle del Log #${selectedLog?.oid ?? ""}`}
+        size="lg"
+      >
+        {!selectedLog ? null : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase tracking-wider text-slate-400">Fecha y hora</p><p className="mt-1 font-semibold text-slate-800">{selectedLog.fecha_hora}</p></div>
+              <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase tracking-wider text-slate-400">Acción</p><p className="mt-1 font-semibold text-slate-800">{selectedLog.tipo_accion}</p></div>
+              <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase tracking-wider text-slate-400">IP del equipo</p><p className="mt-1 font-semibold text-slate-800">{selectedLog.ip_equipo}</p></div>
+              <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase tracking-wider text-slate-400">Nombre del equipo</p><p className="mt-1 font-semibold text-slate-800">{selectedLog.nombre_equipo || "No disponible"}</p></div>
+              <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase tracking-wider text-slate-400">Usuario windows</p><p className="mt-1 font-semibold text-slate-800">{selectedLog.usuario_windows_equipo || "No disponible"}</p></div>
+              <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase tracking-wider text-slate-400">Módulo</p><p className="mt-1 font-semibold text-slate-800">{selectedLog.modulo}</p></div>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-[11px] uppercase tracking-wider text-slate-400">Detalle</p>
+              <p className="mt-1 text-sm text-slate-700">{selectedLog.detalle || "—"}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-[11px] uppercase tracking-wider text-slate-400">Estructura JSON</p>
+              <pre className="mt-2 max-h-[320px] overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
+{JSON.stringify(selectedLog.payload_json || {}, null, 2)}
+              </pre>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
@@ -1937,6 +1981,8 @@ function CoordinatorModule({
   const [solicitudOpen, setSolicitudOpen] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
   const [documentsOpen, setDocumentsOpen] = useState(false);
+  const [auditoriaOpen, setAuditoriaOpen] = useState(false);
+  const [auditoriaSubmodulo, setAuditoriaSubmodulo] = useState<AuditSubmodulo>("LOGS_SISTEMAS");
   const [documentView, setDocumentView] = useState<"boletines" | "manuales" | "solicitudesManuales" | null>(null);
   const [solicitudes, setSolicitudes] = useState<SolicitudParametro[]>([]);
 
@@ -1955,6 +2001,7 @@ function CoordinatorModule({
     setSolicitudOpen(false);
     setReportsOpen(false);
     setDocumentsOpen(false);
+    setAuditoriaOpen(false);
     setDocumentView(null);
   };
 
@@ -1973,6 +2020,7 @@ function CoordinatorModule({
               setSolicitudOpen(false);
               setReportsOpen(false);
               setDocumentsOpen(false);
+              setAuditoriaOpen(false);
             }}
             className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
               activeSection === "registro" || activeSection === "restaurarDB"
@@ -2022,6 +2070,7 @@ function CoordinatorModule({
               setSolicitudOpen(false);
               setReportsOpen(false);
               setDocumentsOpen(false);
+              setAuditoriaOpen(false);
             }}
             className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
               activeSection === "consultaVersiones" || activeSection === "consulta" || activeSection === "versionParametros"
@@ -2080,6 +2129,7 @@ function CoordinatorModule({
               setConsultaOpen(false);
               setReportsOpen(false);
               setDocumentsOpen(false);
+              setAuditoriaOpen(false);
             }}
             className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
               activeSection === "solicitudParametro" || activeSection === "parametrosConfig"
@@ -2123,7 +2173,7 @@ function CoordinatorModule({
         {/* Dropdown Reportes */}
         <div className="relative">
           <button
-            onClick={() => { setReportsOpen(!reportsOpen); setRegistroOpen(false); setConsultaOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); }}
+            onClick={() => { setReportsOpen(!reportsOpen); setRegistroOpen(false); setConsultaOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); }}
             className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
               activeSection === "reportes"
                 ? "border-white text-white bg-white/10"
@@ -2140,13 +2190,13 @@ function CoordinatorModule({
           {reportsOpen && (
             <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-56">
               <button
-                onClick={() => { setTab("reporteFirmas"); setActiveSection("reportes"); setReportsOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); setDocumentView(null); }}
+                onClick={() => { setTab("reporteFirmas"); setActiveSection("reportes"); setReportsOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); setDocumentView(null); }}
                 className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
               >
                 Reporte de Firmas de Directivos
               </button>
               <button
-                onClick={() => { setTab("reporteDetalles"); setActiveSection("reportes"); setReportsOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); setDocumentView(null); }}
+                onClick={() => { setTab("reporteDetalles"); setActiveSection("reportes"); setReportsOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); setDocumentView(null); }}
                 className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
               >
                 Reporte de Detalles de Validación
@@ -2158,7 +2208,7 @@ function CoordinatorModule({
         {/* Dropdown Documentos */}
         <div className="relative">
            <button
-            onClick={() => { setDocumentsOpen(!documentsOpen); setRegistroOpen(false); setConsultaOpen(false); setReportsOpen(false); setSolicitudOpen(false); }}
+            onClick={() => { setDocumentsOpen(!documentsOpen); setRegistroOpen(false); setConsultaOpen(false); setReportsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); }}
             className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
               activeSection === "documentos" || activeSection === "solicitudesManuales"
                 ? "border-white text-white bg-white/10"
@@ -2175,19 +2225,19 @@ function CoordinatorModule({
           {documentsOpen && (
             <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-60">
               <button
-                onClick={() => { setActiveSection("documentos"); setDocumentView("boletines"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); }}
+                onClick={() => { setActiveSection("documentos"); setDocumentView("boletines"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); }}
                 className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
               >
                 Boletines Tecnicos
               </button>
               <button
-                onClick={() => { setActiveSection("documentos"); setDocumentView("manuales"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); }}
+                onClick={() => { setActiveSection("documentos"); setDocumentView("manuales"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); }}
                 className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
               >
                 Manuales de Usuarios
               </button>
               <button
-                onClick={() => { goToSection("solicitudesManuales"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); }}
+                onClick={() => { goToSection("solicitudesManuales"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); }}
                 className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors border-t border-slate-100"
               >
                 Solicitudes de manuales
@@ -2196,17 +2246,55 @@ function CoordinatorModule({
           )}
         </div>
 
-        <button
-          onClick={() => goToSection("auditoria")}
-          className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
-            activeSection === "auditoria"
-              ? "border-white text-white bg-white/10"
-              : "border-transparent text-white/85 hover:text-white hover:border-white/60"
-          }`}
-        >
-          <ShieldCheck size={14} />
-          Auditoría
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => { setAuditoriaOpen(!auditoriaOpen); setRegistroOpen(false); setConsultaOpen(false); setReportsOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); }}
+            className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
+              activeSection === "auditoria"
+                ? "border-white text-white bg-white/10"
+                : "border-transparent text-white/85 hover:text-white hover:border-white/60"
+            }`}
+          >
+            <ShieldCheck size={14} />
+            Auditoría
+            <ChevronDown
+              size={12}
+              className={`transition-transform ${auditoriaOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+          {auditoriaOpen && (
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-56">
+              {([
+                ["LOGS_SISTEMAS", "Logs Sistemas"],
+                ["LOGS_DESCARGAS", "Logs Descargas"],
+                ["LOGS_ACCESOS", "Logs Accesos"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => {
+                    setAuditoriaSubmodulo(key);
+                    setActiveSection("auditoria");
+                    onSelectSection("auditoria");
+                    setAuditoriaOpen(false);
+                    setRegistroOpen(false);
+                    setConsultaOpen(false);
+                    setSolicitudOpen(false);
+                    setReportsOpen(false);
+                    setDocumentsOpen(false);
+                    setDocumentView(null);
+                  }}
+                  className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                    activeSection === "auditoria" && auditoriaSubmodulo === key
+                      ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
+                      : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </nav>
 
       <div className="flex-1 overflow-auto bg-[#f8f9fa] p-6">
@@ -2258,7 +2346,7 @@ function CoordinatorModule({
           <ReportDetalles versions={versions} observaciones={observaciones} />
         )}
         {activeSection === "auditoria" && (
-          <AuditoriaSection />
+          <AuditoriaSection submodulo={auditoriaSubmodulo} />
         )}
       </div>
     </div>
@@ -3940,7 +4028,7 @@ function ValidatorModule({
 
   const navItems: { key: ValidatorTab; label: string; icon: React.ReactNode }[] = [
     { key: "registro", label: "Registro de Validación", icon: <ClipboardList size={14} /> },
-    { key: "boletines", label: "Boletines", icon: <FileText size={14} /> },
+    { key: "boletines", label: "Boletines técnicos", icon: <FileText size={14} /> },
     { key: "manuales", label: "Manuales de Usuarios", icon: <BookOpen size={14} /> },
   ];
 
@@ -4037,7 +4125,7 @@ function ValidationRegistration({
   const [rejectionOpen, setRejectionOpen] = useState(false);
   const [apForm, setApForm] = useState({ observacion: "", nombre: "", cargo: "", firma: "" });
   const [reForm, setReForm] = useState({ incidencia: "", ruta: "", observacion: "", nombre: "", cargo: "", firma: "", captura: [] as string[] });
-  const [vrColFilters, setVrColFilters] = useState({ titulo: "", fecha: "", estado: "" });
+  const [vrColFilters, setVrColFilters] = useState({ titulo: "", fecha: "", estado: "", contenedor: "" });
   const firmaApRef = useRef<HTMLInputElement>(null);
   const firmaReRef = useRef<HTMLInputElement>(null);
   const capturaReRef = useRef<HTMLInputElement>(null);
@@ -4119,6 +4207,7 @@ function ValidationRegistration({
     return (
       (!vrColFilters.titulo || v.titulo.toLowerCase().includes(vrColFilters.titulo.toLowerCase())) &&
       (!vrColFilters.fecha || validationDate.includes(vrColFilters.fecha.toLowerCase())) &&
+      (!vrColFilters.contenedor || (v.contenedor_bd || "").toLowerCase().includes(vrColFilters.contenedor.toLowerCase())) &&
       (!vrColFilters.estado || v.estado === vrColFilters.estado)
     );
   });
@@ -4135,7 +4224,7 @@ function ValidationRegistration({
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              {["Título Versión", "Fecha Compilación", "Estado", "Enlace", "Obs.", "Acciones"].map((h) => (
+              {["Título Versión", "Contenedor BD", "Fecha Compilación", "Estado", "Enlace", "Obs.", "Acciones"].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider"
@@ -4146,6 +4235,7 @@ function ValidationRegistration({
             </tr>
             <tr className="bg-slate-100/90 border-t border-slate-200">
               <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar título" onChange={(e) => setVrColFilters((p) => ({ ...p, titulo: e.target.value }))} /></th>
+              <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar contenedor" onChange={(e) => setVrColFilters((p) => ({ ...p, contenedor: e.target.value }))} /></th>
               <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar fecha" onChange={(e) => setVrColFilters((p) => ({ ...p, fecha: e.target.value }))} /></th>
               <th className="px-4 py-1.5">
                 <select className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" onChange={(e) => setVrColFilters((p) => ({ ...p, estado: e.target.value }))}>
@@ -4164,6 +4254,7 @@ function ValidationRegistration({
             {validationPagination.rows.map((v) => (
               <tr key={v.id} className="hover:bg-slate-50/80 transition-colors">
                 <td className="px-4 py-3 font-medium text-slate-900 max-w-xs">{v.titulo}</td>
+                <td className="px-4 py-3 font-bold text-[#0778ac] text-xs">{v.contenedor_bd || "—"}</td>
                 <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fecha_compilacion || "—"}</td>
                 <td className="px-4 py-3">
                   <StatusBadge estado={v.estado} />
@@ -4652,6 +4743,7 @@ function Boletines({ canUpload = true }: { canUpload?: boolean }) {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
   const [selectedBoletin, setSelectedBoletin] = useState<ApiBoletin | null>(null);
   const [selectedMes, setSelectedMes] = useState<number | "">("");
   const [selectedAnio, setSelectedAnio] = useState<number | "">("");
@@ -4811,18 +4903,72 @@ function Boletines({ canUpload = true }: { canUpload?: boolean }) {
     }
   }
 
+  async function handleExportExcel() {
+    if (!selectedMes || !selectedAnio) {
+      setError("Seleccione un mes y año para exportar los boletines.");
+      return;
+    }
+
+    try {
+      setError("");
+      const params = new URLSearchParams({
+        mes: String(selectedMes),
+        anio: String(selectedAnio),
+      });
+
+      Object.entries(filters).forEach(([key, value]) => {
+        const normalized = value.trim();
+        if (normalized) {
+          params.set(key, normalized);
+        }
+      });
+
+      await downloadApiFile(
+        `/boletines/exportar-excel?${params.toString()}`,
+        `boletines_filtrados_${selectedAnio}_${String(selectedMes).padStart(2, "0")}.xlsx`
+      );
+      window.setTimeout(() => {
+        setExportPreviewOpen(false);
+      }, 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No fue posible exportar el archivo Excel.");
+    }
+  }
+
+  function handleOpenExportPreview() {
+    if (!selectedMes || !selectedAnio) {
+      setError("Seleccione un mes y año para exportar los boletines.");
+      return;
+    }
+    if (filteredItems.length === 0) {
+      setError("No hay boletines filtrados para exportar.");
+      return;
+    }
+    setError("");
+    setExportPreviewOpen(true);
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <SectionHeader
-          title="Boletines"
+          title="Boletines técnicos"
           subtitle="Cargue el archivo Excel por mes/año y consulte el detalle por periodo."
         />
-        {canUpload && (
-          <Btn v="primary" onClick={() => setFormOpen(true)}>
-            <Plus size={14} /> Cargar Excel
+        <div className="flex items-center gap-2">
+          <Btn
+            v="secondary"
+            onClick={handleOpenExportPreview}
+            disabled={!selectedMes || !selectedAnio || loading || items.length === 0}
+          >
+            <Download size={14} /> Vista previa XLSX
           </Btn>
-        )}
+          {canUpload && (
+            <Btn v="primary" onClick={() => setFormOpen(true)}>
+              <Plus size={14} /> Cargar Excel
+            </Btn>
+          )}
+        </div>
       </div>
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-4">
         <div className="grid gap-3 md:grid-cols-4 items-end">
@@ -5081,6 +5227,77 @@ function Boletines({ canUpload = true }: { canUpload?: boolean }) {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={exportPreviewOpen}
+        onClose={() => setExportPreviewOpen(false)}
+        title="Vista previa de exportación XLSX"
+        size="xl"
+      >
+        <div className="space-y-4">
+          <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-semibold text-slate-800">
+                {selectedMes && selectedAnio
+                  ? `Boletines de ${monthName(selectedMes)} ${selectedAnio}`
+                  : "Boletines filtrados"}
+              </p>
+              <p>Se exportarán {filteredItems.length} registro(s) con los filtros actuales.</p>
+            </div>
+            <Btn v="primary" onClick={handleExportExcel} disabled={filteredItems.length === 0}>
+              <Download size={14} /> Descargar XLSX
+            </Btn>
+          </div>
+
+          <div className="overflow-x-auto overflow-y-auto max-h-[520px] rounded-xl border border-slate-200">
+            <table className="w-full min-w-[1100px] text-sm">
+              <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50">
+                <tr>
+                  {[
+                    "Consecutivo",
+                    "Modulo",
+                    "Fecha",
+                    "Opcion",
+                    "Impacto",
+                    "Categoria",
+                    "Clase de documento",
+                    "Asunto",
+                  ].map((heading) => (
+                    <th
+                      key={heading}
+                      className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400"
+                    >
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {filteredItems.map((b) => (
+                  <tr key={`preview-${b.oid}`} className="hover:bg-slate-50/70">
+                    <td className="px-3 py-2 text-slate-600">{b.consecutivo ?? "—"}</td>
+                    <td className="px-3 py-2 text-slate-600">{b.modulo || "—"}</td>
+                    <td className="px-3 py-2 text-slate-600">{b.fecha?.slice(0, 10) ?? "—"}</td>
+                    <td className="px-3 py-2 text-slate-600">{b.opcion || "—"}</td>
+                    <td className="px-3 py-2">{renderImpactoBadge(b.impacto)}</td>
+                    <td className="px-3 py-2 text-slate-600">{b.categoria || "—"}</td>
+                    <td className="px-3 py-2 text-slate-600">{b.clase_documento || "—"}</td>
+                    <td className="max-w-[360px] truncate px-3 py-2 text-slate-700" title={b.asunto || ""}>
+                      {b.asunto || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-2">
+            <Btn v="secondary" onClick={() => setExportPreviewOpen(false)}>
+              Cerrar
+            </Btn>
+          </div>
+        </div>
       </Modal>
 
       {canUpload && (

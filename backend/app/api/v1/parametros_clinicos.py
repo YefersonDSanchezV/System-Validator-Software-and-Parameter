@@ -153,6 +153,14 @@ def restablecer_parametros_defecto(db: Session = Depends(get_db)):
         update_parametro_historia_clinica(hc_target)
         update_parametro_enfermeria(enf_crenf_target, enf_aplmed_target)
 
+        #Estilo para el correo de parametros
+        estilo_contenedor = "width: 95%; max-width: 1000px; margin: 0 auto; font-family: 'Segoe UI', Arial, sans-serif; color: #333333; line-height: 1.6; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);"
+        estilo_header = "background-color: #1a5276; padding: 20px; text-align: center; color: #ffffff;"
+        estilo_tabla = "width: 100%; border-collapse: collapse; margin: 15px 0;"
+        estilo_celda_label = "padding: 8px 12px; background-color: #f8f9fa; font-weight: bold; border-bottom: 1px solid #e9ecef; width: 25%; color: #555555;"
+        estilo_celda_valor = "padding: 8px 12px; border-bottom: 1px solid #e9ecef;"
+        estilo_alerta = "background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0; border-radius: 4px; color: #856404;"
+
         # Notify
         try:
             recipients = list(set(
@@ -160,17 +168,42 @@ def restablecer_parametros_defecto(db: Session = Depends(get_db)):
                 SolicitudParametroService._obtener_destinatarios(db, "Enfermeria")
             ))
             if recipients:
-                body = (
-                    "Se han restablecido los parámetros clínicos a sus valores por defecto manualmente desde el sistema.\n\n"
-                    f"Historia Clínica (HCPDIAAUT): {hc_target}\n"
-                    f"Enfermería (HCNMHRCRENF): {enf_crenf_target}\n"
-                    f"Enfermería (HCNHAPLMED): {enf_aplmed_target}\n"
-                    "Estado: Parámetros Cerrados / Por Defecto\n"
-                )
+                body = f"""
+                    <div style="{estilo_contenedor}">
+                        <div style="{estilo_header}">
+                            <h2>Parámetros Clínicos Restablecidos a Valores Por Defecto</h2>
+                        </div>
+                        <div style="padding: 20px;">
+                            <p>Se han restablecido los parámetros clínicos a sus valores por defecto manualmente desde el sistema.</p>
+                            <table style="{estilo_tabla}">
+                                <tr>
+                                    <td style="{estilo_celda_label}">Historia Clínica: </td>
+                                    <td style="{estilo_celda_valor}">{hc_target}</td>
+                                </tr>
+                                <tr>
+                                    <td style="{estilo_celda_label}">Enfermería: </td>
+                                    <td style="{estilo_celda_valor}">{enf_crenf_target}</td>
+                                </tr>
+                            </table>
+                            <div style="{estilo_alerta}">
+                                <strong>Estado:</strong> Parámetros Cerrados / Por Defecto
+                            </div>
+                        </div>
+                    </div>
+                """
+                #body = (
+                #   "Se han restablecido los parámetros clínicos a sus valores por defecto manualmente desde el sistema.\n\n"
+                #    f"Historia Clínica (HCPDIAAUT): {hc_target}\n"
+                #    f"Enfermería (HCNMHRCRENF): {enf_crenf_target}\n"
+                #    f"Enfermería (HCNHAPLMED): {enf_aplmed_target}\n"
+                #    "Estado: Parámetros Cerrados / Por Defecto\n"
+                #)
                 send_email(
                     subject="Parámetros Clínicos Restablecidos a Valores Por Defecto",
                     body=body,
-                    recipients=recipients
+                    recipients=recipients,
+                    is_html=True,
+                    include_inline_signature=False,
                 )
         except Exception as exc:
             logger.warning(f"No se pudo enviar notificación por correo al restablecer: {exc}")

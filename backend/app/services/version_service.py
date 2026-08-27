@@ -5,7 +5,16 @@ from sqlalchemy.orm import Session
 
 from app.models.regversion import RegVersion, RestauracionDB, ConfiguracionVersionCorreos, LogCorreoVersion
 from app.repositories.version_repositories import VersionRepository
-from app.schemas.version import VersionCreate, VersionUpdate, RestauracionDBCreate
+from app.schemas.version import (
+    VersionCreate,
+    VersionUpdate,
+    RestauracionDBCreate,
+    ReporteFirmaFila,
+    ReporteFirmasPdfRequest,
+)
+from app.services.observacion_service import ObservacionService
+from app.utils.mailer import MailAttachment, get_version_mailer_config, send_email
+from app.utils.pdf_generator import generate_firmas_report_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +23,7 @@ class VersionService:
 
     def __init__(self):
         self.repository = VersionRepository()
+        self.observacion_service = ObservacionService()
 
     def listar(self, db: Session):
         return self.repository.get_all(db)
@@ -119,9 +129,11 @@ class VersionService:
         prefix = "[PRUEBAS]" if tipo == "pruebas" else "[PRODUCCIÓN]"
         subject = f"{prefix} {titulo_comp}"
         estado_str = "Activo" if version.estado else "Inactivo"
+
         # normalize fecha_despliegue to UTC naive for storage but keep formatting
         fecha_despliegue_str = None
         fecha_despliegue_val = None
+        
         if fecha_despliegue:
             # parse may be naive, assume Bogota
             try:
@@ -184,7 +196,7 @@ class VersionService:
                         </tr>
                         <tr>
                             <td style="{estilo_celda_label}">Enlace:</td>
-                            <td style="{estilo_celda_valor}"><a href="{version.enlace}" style="color: #3498db; text-decoration: none; font-weight: bold;">Acceder al enlace</a></td>
+                            <td style="{estilo_celda_valor}"><a href="http://192.168.150.10:8010/" style="color: #3498db; text-decoration: none; font-weight: bold;">Acceder al enlace</a></td>
                         </tr>
                     </table>
 
@@ -248,10 +260,55 @@ class VersionService:
         if not recipients:
             raise ValueError(f"No hay destinatarios configurados para '{tipo}'. Configurelos en Parámetros -> Consulta de Versión -> Parámetros.")
 
+        attachments: list[MailAttachment] = []
+        if tipo == "produccion":
+            try:
+                now_bogota = datetime.now(ZoneInfo("America/Bogota"))
+                observaciones = self.observacion_service.listar_por_version(db, oid)
+                filas = [
+                    ReporteFirmaFila(
+                        nombre=str(item.get("nombre") or "Sin nombre"),
+                        cargo=item.get("cargo"),
+                        modulo=str(item.get("modulo") or "OTROS"),
+                        fecha_hora=str(item.get("fechaHora") or "—"),
+                        estado=str(item.get("estado") or "rechazo"),
+                        tiene_firma=bool(item.get("firma")),
+                    )
+                    for item in observaciones
+                ]
+                temas = sorted({str(item.modulo) for item in filas}) if filas else [titulo_comp]
+                reporte_payload = ReporteFirmasPdfRequest(
+                    version_titulo=titulo_comp,
+                    version_descripcion=version.descripcion or "Sin descripción",
+                    fecha_reunion=now_bogota.strftime("%Y-%m-%d"),
+                    hora_inicio=now_bogota.strftime("%H:%M"),
+                    hora_fin=now_bogota.strftime("%H:%M"),
+                    conclusion="Reporte generado automáticamente para soporte del despliegue de producción.",
+                    observacion=f"Adjunto automático del acta de firmas para la compilación {titulo_comp}.",
+                    temas=temas,
+                    filas=filas,
+                )
+                pdf_bytes = generate_firmas_report_pdf(reporte_payload)
+                attachments.append(
+                    MailAttachment(
+                        filename=f"reporte_firmas_{oid}.pdf",
+                        content=pdf_bytes,
+                        mime_subtype="pdf",
+                    )
+                )
+            except Exception as exc:
+                logger.warning("No se pudo adjuntar el reporte de firmas para versión %s: %s", oid, exc)
+
         # send email (non-blocking failure)
         try:
-            from app.utils.mailer import send_email
-            send_email(subject, body, recipients, is_html=True)
+            send_email(
+                subject,
+                body,
+                recipients,
+                is_html=True,
+                mailer_config=get_version_mailer_config(),
+                attachments=attachments,
+            )
         except Exception as exc:
             logger.warning("No se pudo enviar correo de versión %s (%s): %s", oid, tipo, exc)
             raise ValueError(f"No se pudo enviar el correo: {exc}") from exc

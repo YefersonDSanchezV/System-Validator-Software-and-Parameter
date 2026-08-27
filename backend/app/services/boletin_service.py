@@ -3,7 +3,9 @@ from io import BytesIO
 import re
 import unicodedata
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from openpyxl.utils.datetime import from_excel as excel_serial_to_datetime
 from sqlalchemy.orm import Session
 
@@ -39,6 +41,158 @@ class BoletinService:
     def listar_periodos(self, db: Session):
         rows = self.repository.list_periodos(db)
         return [{"mes": int(row.mes), "anio": int(row.anio)} for row in rows]
+
+    @staticmethod
+    def _format_date(value: datetime | None) -> str:
+        if value is None:
+            return ""
+        return value.strftime("%Y-%m-%d")
+
+    @staticmethod
+    def _matches_filter(value, query: str | None) -> bool:
+        expected = (query or "").strip().lower()
+        if not expected:
+            return True
+        candidate = "" if value is None else str(value).strip().lower()
+        return expected in candidate
+
+    def _filter_boletines(
+        self,
+        boletines: list[Boletin],
+        *,
+        consecutivo: str | None = None,
+        modulo: str | None = None,
+        fecha: str | None = None,
+        opcion: str | None = None,
+        impacto: str | None = None,
+        categoria: str | None = None,
+        clase_documento: str | None = None,
+        asunto: str | None = None,
+    ) -> list[Boletin]:
+        filtered: list[Boletin] = []
+        for boletin in boletines:
+            if not self._matches_filter(boletin.consecutivo, consecutivo):
+                continue
+            if not self._matches_filter(boletin.modulo, modulo):
+                continue
+            if not self._matches_filter(self._format_date(boletin.fecha), fecha):
+                continue
+            if not self._matches_filter(boletin.opcion, opcion):
+                continue
+            if not self._matches_filter(boletin.impacto, impacto):
+                continue
+            if not self._matches_filter(boletin.categoria, categoria):
+                continue
+            if not self._matches_filter(boletin.clase_documento, clase_documento):
+                continue
+            if not self._matches_filter(boletin.asunto, asunto):
+                continue
+            filtered.append(boletin)
+        return filtered
+
+    def exportar_excel_filtrado(
+        self,
+        db: Session,
+        *,
+        mes: int,
+        anio: int,
+        consecutivo: str | None = None,
+        modulo: str | None = None,
+        fecha: str | None = None,
+        opcion: str | None = None,
+        impacto: str | None = None,
+        categoria: str | None = None,
+        clase_documento: str | None = None,
+        asunto: str | None = None,
+    ) -> tuple[BytesIO, str]:
+        boletines = self.repository.get_all(db, mes=mes, anio=anio)
+        filtered = self._filter_boletines(
+            boletines,
+            consecutivo=consecutivo,
+            modulo=modulo,
+            fecha=fecha,
+            opcion=opcion,
+            impacto=impacto,
+            categoria=categoria,
+            clase_documento=clase_documento,
+            asunto=asunto,
+        )
+        if not filtered:
+            raise ValueError("No hay boletines para exportar con los filtros seleccionados.")
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = f"{anio}-{mes:02d}"
+
+        header_fill = PatternFill(start_color="0778AC", end_color="0778AC", fill_type="solid")
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        data_font = Font(name="Calibri", size=10)
+        thin_border = Border(
+            left=Side(style="thin", color="E2E8F0"),
+            right=Side(style="thin", color="E2E8F0"),
+            top=Side(style="thin", color="E2E8F0"),
+            bottom=Side(style="thin", color="E2E8F0"),
+        )
+
+        headers = [
+            "Tipo de documento",
+            "Consecutivo",
+            "Fecha",
+            "Modulo",
+            "Opcion",
+            "Impacto",
+            "Categoria",
+            "Con documentacion",
+            "Asunto",
+            "Clase de documento",
+            "Advertencia",
+            "Instructivos descripcion",
+            "Mes",
+            "Año",
+        ]
+        sheet.append(headers)
+
+        for col_num in range(1, len(headers) + 1):
+            cell = sheet.cell(row=1, column=col_num)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = thin_border
+
+        for boletin in filtered:
+            sheet.append([
+                boletin.tipo_documento or "",
+                boletin.consecutivo or "",
+                self._format_date(boletin.fecha),
+                boletin.modulo.value if hasattr(boletin.modulo, "value") else (boletin.modulo or ""),
+                boletin.opcion or "",
+                boletin.impacto.value if hasattr(boletin.impacto, "value") else (boletin.impacto or ""),
+                boletin.categoria or "",
+                "Sí" if boletin.con_documentacion else "No",
+                boletin.asunto or "",
+                boletin.clase_documento or "",
+                boletin.advertencia or "",
+                boletin.instructivo_descripcion or "",
+                boletin.mes,
+                boletin.anio,
+            ])
+
+        for row in sheet.iter_rows(min_row=2, max_row=sheet.max_row, min_col=1, max_col=len(headers)):
+            for cell in row:
+                cell.font = data_font
+                cell.border = thin_border
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+        for column in sheet.columns:
+            max_len = max(len(str(cell.value or "")) for cell in column)
+            column_letter = get_column_letter(column[0].column)
+            sheet.column_dimensions[column_letter].width = min(max(max_len + 4, 14), 50)
+
+        output = BytesIO()
+        workbook.save(output)
+        output.seek(0)
+        filename = f"boletines_filtrados_{anio}_{mes:02d}.xlsx"
+        return output, filename
 
     @staticmethod
     def _canon(value: str) -> str:

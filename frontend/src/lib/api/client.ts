@@ -1,17 +1,72 @@
 import { API_BASE_URL } from "@/config/constants";
 
 const AUTHENTICATED_USER_KEY = "svs-authenticated-user";
+let cachedPrivateIp = "";
+let networkDiscoveryStarted = false;
 
 function getAuthenticatedUser() {
   if (typeof window === "undefined") return "";
   return window.sessionStorage.getItem(AUTHENTICATED_USER_KEY)?.trim() ?? "";
 }
 
+function extractPrivateIpv4FromCandidate(candidate: string) {
+  const match = candidate.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/);
+  if (!match) return "";
+  const [a, b] = match[1].split(".").map(Number);
+  const isPrivate =
+    a === 10 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168);
+  return isPrivate ? match[1] : "";
+}
+
+function discoverClientPrivateIp() {
+  if (typeof window === "undefined" || networkDiscoveryStarted || cachedPrivateIp) return;
+  networkDiscoveryStarted = true;
+
+  const RTCPeerConnectionCtor =
+    (window as any).RTCPeerConnection ||
+    (window as any).webkitRTCPeerConnection ||
+    (window as any).mozRTCPeerConnection;
+  if (!RTCPeerConnectionCtor) return;
+
+  try {
+    const pc = new RTCPeerConnectionCtor({ iceServers: [] });
+    const closeConnection = () => {
+      try {
+        pc.close();
+      } catch {
+        // no-op
+      }
+    };
+    const timeout = window.setTimeout(closeConnection, 1200);
+    pc.createDataChannel("ip");
+    pc.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
+      const candidateText = event.candidate?.candidate ?? "";
+      const privateIp = extractPrivateIpv4FromCandidate(candidateText);
+      if (privateIp) {
+        cachedPrivateIp = privateIp;
+        window.clearTimeout(timeout);
+        closeConnection();
+      }
+    };
+    pc.createOffer()
+      .then((offer: RTCSessionDescriptionInit) => pc.setLocalDescription(offer))
+      .catch(() => closeConnection());
+  } catch {
+    // no-op
+  }
+}
+
 function appendAuditHeaders(headers: Headers) {
+  discoverClientPrivateIp();
   const authenticatedUser = getAuthenticatedUser();
   if (authenticatedUser) {
     headers.set("X-User-Name", authenticatedUser);
     headers.set("X-User-Role", authenticatedUser);
+  }
+  if (cachedPrivateIp) {
+    headers.set("X-Client-Private-IP", cachedPrivateIp);
   }
 }
 

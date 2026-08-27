@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.boletin import BoletinResponse, BoletinPeriodo, BoletinImportResponse
@@ -26,6 +27,45 @@ def listar(
 @router.get("/periodos", response_model=list[BoletinPeriodo])
 def listar_periodos(db: Session = Depends(get_db)):
     return service.listar_periodos(db)
+
+
+@router.get("/exportar-excel")
+def exportar_excel(
+    mes: int = Query(..., ge=1, le=12),
+    anio: int = Query(..., ge=2000, le=2100),
+    consecutivo: str | None = Query(None),
+    modulo: str | None = Query(None),
+    fecha: str | None = Query(None),
+    opcion: str | None = Query(None),
+    impacto: str | None = Query(None),
+    categoria: str | None = Query(None),
+    clase_documento: str | None = Query(None),
+    asunto: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    try:
+        output, filename = service.exportar_excel_filtrado(
+            db,
+            mes=mes,
+            anio=anio,
+            consecutivo=consecutivo,
+            modulo=modulo,
+            fecha=fecha,
+            opcion=opcion,
+            impacto=impacto,
+            categoria=categoria,
+            clase_documento=clase_documento,
+            asunto=asunto,
+        )
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error generando Excel: {exc}") from exc
 
 
 @router.get("/{oid}/pdf")
