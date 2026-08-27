@@ -1,0 +1,26 @@
+name: svs-dev
+
+services:
+  backend_pruebas:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env.dev
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8021}:8000"
+    volumes:
+      - ./backend/uploads:/app/uploads
+    networks:
+      default:
+        aliases:
+          - backend
+
+  frontend_pruebas:
+    build:
+      context: ./frontend
+    depends_on:
+      - backend_pruebas
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8011}:80"
