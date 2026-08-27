@@ -94,6 +94,14 @@ def initialize_database():
         conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS num_compilacion VARCHAR(100)"))
         conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS fecha_compilacion TIMESTAMP"))
 
+        # Ensure configuracion_version_correos table exists via Base.metadata.create_all already, but also ensure default row
+        try:
+            conf_v_exists = conn.execute(text("SELECT id FROM configuracion_version_correos LIMIT 1")).fetchone()
+            if not conf_v_exists:
+                conn.execute(text("INSERT INTO configuracion_version_correos (id, correos_pruebas, correos_produccion, updated_at) VALUES (1, '', '', NOW())"))
+        except Exception:
+            pass
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

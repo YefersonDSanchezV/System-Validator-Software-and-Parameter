@@ -4,7 +4,7 @@ import {
   XCircle, Download, Plus, ExternalLink, FileText, BookOpen,
   BarChart3, ArrowLeft, Upload, Printer, AlertCircle,
   ChevronDown, ChevronRight, Settings, Home, ClipboardList,
-  Link, RotateCcw,
+  Link, RotateCcw, Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
@@ -1913,7 +1913,7 @@ function AuditoriaSection() {
 
 // ─── Coordinator Module ───────────────────────────────────────────────────────
 
-type CoordTab = "registro" | "restaurarDB" | "consulta" | "detalles" | "solicitudParametro" | "parametrosConfig" | "reporteFirmas" | "reporteDetalles" | "solicitudesManuales" | "auditoria";
+type CoordTab = "registro" | "restaurarDB" | "consulta" | "consultaVersiones" | "versionParametros" | "detalles" | "solicitudParametro" | "parametrosConfig" | "reporteFirmas" | "reporteDetalles" | "solicitudesManuales" | "auditoria";
 
 function CoordinatorModule({
   versions, setVersions, observaciones, setObservaciones, onError,
@@ -1933,6 +1933,7 @@ function CoordinatorModule({
   const [tab, setTab] = useState<CoordTab>(selectedSection);
   const [activeSection, setActiveSection] = useState<CoordTab | "reportes" | "documentos" | "solicitudesDropdown">(selectedSection);
   const [registroOpen, setRegistroOpen] = useState(false);
+  const [consultaOpen, setConsultaOpen] = useState(false);
   const [solicitudOpen, setSolicitudOpen] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
   const [documentsOpen, setDocumentsOpen] = useState(false);
@@ -1945,10 +1946,12 @@ function CoordinatorModule({
   }, [selectedSection]);
 
   const goToSection = (section: CoordTab) => {
-    setTab(section);
-    setActiveSection(section);
-    onSelectSection(section);
+    const normalized = section === "consulta" ? "consultaVersiones" as CoordTab : section;
+    setTab(normalized);
+    setActiveSection(normalized as any);
+    onSelectSection(normalized);
     setRegistroOpen(false);
+    setConsultaOpen(false);
     setSolicitudOpen(false);
     setReportsOpen(false);
     setDocumentsOpen(false);
@@ -2010,17 +2013,51 @@ function CoordinatorModule({
           )}
         </div>
 
-        <button
-          onClick={() => goToSection("consulta")}
-          className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
-            activeSection === "consulta"
-              ? "border-white text-white bg-white/10"
-              : "border-transparent text-white/85 hover:text-white hover:border-white/60"
-          }`}
-        >
-          <ClipboardList size={14} />
-          Consulta de Versión
-        </button>
+        {/* Dropdown Consulta de Versión */}
+        <div className="relative">
+          <button
+            onClick={() => {
+              setConsultaOpen(!consultaOpen);
+              setRegistroOpen(false);
+              setSolicitudOpen(false);
+              setReportsOpen(false);
+              setDocumentsOpen(false);
+            }}
+            className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
+              activeSection === "consultaVersiones" || activeSection === "consulta" || activeSection === "versionParametros"
+                ? "border-white text-white bg-white/10"
+                : "border-transparent text-white/85 hover:text-white hover:border-white/60"
+            }`}
+          >
+            <ClipboardList size={14} />
+            Consulta de Versión
+            <ChevronDown size={12} className={`transition-transform ${consultaOpen ? "rotate-180" : ""}`} />
+          </button>
+          {consultaOpen && (
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-60">
+              <button
+                onClick={() => goToSection("consultaVersiones")}
+                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                  activeSection === "consultaVersiones" || activeSection === "consulta"
+                    ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
+                    : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
+                }`}
+              >
+                Consultar versiones
+              </button>
+              <button
+                onClick={() => goToSection("versionParametros")}
+                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                  activeSection === "versionParametros"
+                    ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
+                    : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
+                }`}
+              >
+                Parámetros
+              </button>
+            </div>
+          )}
+        </div>
 
         <button
           onClick={() => goToSection("detalles")}
@@ -2040,6 +2077,7 @@ function CoordinatorModule({
             onClick={() => {
               setSolicitudOpen(!solicitudOpen);
               setRegistroOpen(false);
+              setConsultaOpen(false);
               setReportsOpen(false);
               setDocumentsOpen(false);
             }}
@@ -2085,7 +2123,7 @@ function CoordinatorModule({
         {/* Dropdown Reportes */}
         <div className="relative">
           <button
-            onClick={() => { setReportsOpen(!reportsOpen); setRegistroOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); }}
+            onClick={() => { setReportsOpen(!reportsOpen); setRegistroOpen(false); setConsultaOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); }}
             className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
               activeSection === "reportes"
                 ? "border-white text-white bg-white/10"
@@ -2119,8 +2157,8 @@ function CoordinatorModule({
 
         {/* Dropdown Documentos */}
         <div className="relative">
-          <button
-            onClick={() => { setDocumentsOpen(!documentsOpen); setRegistroOpen(false); setReportsOpen(false); setSolicitudOpen(false); }}
+           <button
+            onClick={() => { setDocumentsOpen(!documentsOpen); setRegistroOpen(false); setConsultaOpen(false); setReportsOpen(false); setSolicitudOpen(false); }}
             className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
               activeSection === "documentos" || activeSection === "solicitudesManuales"
                 ? "border-white text-white bg-white/10"
@@ -2140,7 +2178,7 @@ function CoordinatorModule({
                 onClick={() => { setActiveSection("documentos"); setDocumentView("boletines"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); }}
                 className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
               >
-                Boletines
+                Boletines Tecnicos
               </button>
               <button
                 onClick={() => { setActiveSection("documentos"); setDocumentView("manuales"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); }}
@@ -2178,8 +2216,11 @@ function CoordinatorModule({
         {activeSection === "restaurarDB" && (
           <RestaurarDBSection versions={versions} onError={onError} />
         )}
-        {activeSection === "consulta" && (
+        {(activeSection === "consulta" || activeSection === "consultaVersiones") && (
           <VersionQuery versions={versions} setVersions={setVersions} onError={onError} loggedUser={loggedUser} />
+        )}
+        {activeSection === "versionParametros" && (
+          <VersionCorreoParametrosSection onError={onError} />
         )}
         {activeSection === "detalles" && (
           <ValidationDetails versions={versions} observaciones={observaciones} />
@@ -2536,6 +2577,11 @@ function VersionQuery({
 }) {
   const [detailsModal, setDetailsModal] = useState<Version | null>(null);
   const [editModal, setEditModal] = useState<Version | null>(null);
+  const [correoModal, setCorreoModal] = useState<Version | null>(null);
+  const [correoTipo, setCorreoTipo] = useState<"pruebas" | "produccion">("pruebas");
+  const [correoMejoras, setCorreoMejoras] = useState("");
+  const [correoFechaDespliegue, setCorreoFechaDespliegue] = useState("");
+  const [correoSending, setCorreoSending] = useState(false);
   const [colFilters, setColFilters] = useState({
     titulo: "",
     contenedor: "",
@@ -2716,7 +2762,7 @@ function VersionQuery({
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 flex-wrap">
                     <Btn v="ghost" sm onClick={() => setDetailsModal(v)}>
                       <Eye size={13} /> Consultar
                     </Btn>
@@ -2731,6 +2777,12 @@ function VersionQuery({
                       <Power size={13} />
                       {v.estado === "activo" ? "Inactivar" : "Activar"}
                     </Btn>
+                    <button
+                      onClick={() => { setCorreoModal(v); setCorreoTipo("pruebas"); setCorreoMejoras(""); setCorreoFechaDespliegue(""); }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#0778ac] hover:bg-[#066591] text-white transition-colors shadow-sm"
+                    >
+                      <Mail size={13} /> Enviar correo
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -2828,6 +2880,221 @@ function VersionQuery({
           </div>
         )}
       </Modal>
+
+      <Modal open={!!correoModal} onClose={() => { setCorreoModal(null); setCorreoMejoras(""); setCorreoFechaDespliegue(""); }} title={`Enviar correo — ${correoModal?.titulo || ""}`} size="lg">
+        {correoModal && (
+          <div className="space-y-5">
+            <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200 text-sm">
+              <Field label="Título" value={correoModal.titulo} />
+              <Field label="Contenedor BD" value={correoModal.contenedor_bd || "—"} />
+              <Field label="N° Compilación" value={correoModal.num_compilacion || "—"} />
+              <Field label="Fecha Compilación" value={correoModal.fecha_compilacion || "—"} />
+              <Field label="Estado" value={correoModal.estado} />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Enlace</span>
+                <span className="text-sm text-[#0778ac] break-all">{correoModal.enlace}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
+              <button
+                onClick={() => setCorreoTipo("pruebas")}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-colors ${correoTipo==="pruebas" ? "bg-[#0778ac] text-white shadow" : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"}`}
+              >
+                Enviar correo para realizar pruebas
+              </button>
+              <button
+                onClick={() => setCorreoTipo("produccion")}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-colors ${correoTipo==="produccion" ? "bg-[#0778ac] text-white shadow" : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"}`}
+              >
+                Enviar correo para despliegue a producción
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 leading-relaxed">
+              {correoTipo==="pruebas" ? (
+                <>Asunto: <b>[PRUEBAS] {correoModal.tituloBase}{correoModal.num_compilacion ? ` - ${correoModal.num_compilacion}` : ""}</b> — Se enviará a los destinatarios configurados en <b>Consulta de Versión → Parámetros → Correos pruebas</b>.</>
+              ) : (
+                <>Asunto: <b>[PRODUCCIÓN] {correoModal.tituloBase}{correoModal.num_compilacion ? ` - ${correoModal.num_compilacion}` : ""}</b> — Zona horaria <b>America/Bogota</b>, formato fecha <b>dd/MM/yyyy hh:mm a.m./p.m.</b>.</>
+              )}
+            </div>
+
+            <FormTextarea
+              label={correoTipo==="pruebas" ? "Descripción de mejoras de esta compilación *" : "Detalles de mejora *"}
+              required
+              rows={5}
+              placeholder={correoTipo==="pruebas" ? "Describa las mejoras/cambios incluidos en esta compilación..." : "Detalle las mejoras, correcciones e impactos de la versión estable..."}
+              value={correoMejoras}
+              onChange={(e) => setCorreoMejoras(e.target.value)}
+            />
+
+            {correoTipo==="produccion" && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Fecha y hora en que se ejecutará la actualización *</label>
+                <input
+                  type="datetime-local"
+                  value={correoFechaDespliegue}
+                  onChange={(e) => setCorreoFechaDespliegue(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+                />
+                <p className="mt-1 text-xs text-slate-400">Se formateará como dd/MM/yyyy hh:mm a.m./p.m. en zona America/Bogota.</p>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2 border-t border-slate-100">
+              <Btn
+                v="primary"
+                disabled={correoSending || correoMejoras.trim().length < 10 || (correoTipo==="produccion" && !correoFechaDespliegue)}
+                onClick={async () => {
+                  if (!correoModal) return;
+                  if (correoMejoras.trim().length < 10) { onError("La descripción de mejoras debe tener al menos 10 caracteres."); return; }
+                  if (correoTipo==="produccion" && !correoFechaDespliegue) { onError("La fecha y hora de despliegue es obligatoria."); return; }
+                  setCorreoSending(true);
+                  try {
+                    const res = await api<{message:string}>(`/versions/${correoModal.id.slice(1)}/enviar-correo`, {
+                      method: "POST",
+                      body: JSON.stringify({ tipo: correoTipo, mejoras: correoMejoras.trim(), fecha_despliegue: correoFechaDespliegue || null })
+                    });
+                    toast.success(res.message || "Correo enviado correctamente");
+                    setCorreoModal(null); setCorreoMejoras(""); setCorreoFechaDespliegue("");
+                  } catch (e) {
+                    onError(e instanceof Error ? e.message : "No fue posible enviar el correo.");
+                  } finally { setCorreoSending(false); }
+                }}
+              >
+                <Mail size={15} /> {correoSending ? "Enviando..." : "Enviar correo"}
+              </Btn>
+              <Btn v="secondary" onClick={() => { setCorreoModal(null); setCorreoMejoras(""); setCorreoFechaDespliegue(""); }}>Cancelar</Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+// ─── 2b. Version Correo Parametros ────────────────────────────────────────────
+
+function VersionCorreoParametrosSection({ onError }: { onError: (msg: string) => void }) {
+  const [config, setConfig] = useState({ correos_pruebas: "", correos_produccion: "" });
+  const [loading, setLoading] = useState(true);
+  const [savingPruebas, setSavingPruebas] = useState(false);
+  const [savingProduccion, setSavingProduccion] = useState(false);
+  const [savingBoth, setSavingBoth] = useState(false);
+
+  const fetchConfig = () => {
+    setLoading(true);
+    api<{ correos_pruebas: string; correos_produccion: string }>("/versions/config/correos")
+      .then((data) => setConfig({ correos_pruebas: data.correos_pruebas || "", correos_produccion: data.correos_produccion || "" }))
+      .catch((e) => onError(e instanceof Error ? e.message : "Error cargando configuración de correos"))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchConfig(); }, []);
+
+  const save = (payload: { correos_pruebas: string; correos_produccion: string }, mode: "pruebas" | "produccion" | "both") => {
+    if (mode === "pruebas") setSavingPruebas(true);
+    else if (mode === "produccion") setSavingProduccion(true);
+    else setSavingBoth(true);
+    api<{ correos_pruebas: string; correos_produccion: string }>("/versions/config/correos", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    })
+      .then((data) => {
+        setConfig({ correos_pruebas: data.correos_pruebas || "", correos_produccion: data.correos_produccion || "" });
+        toast.success(mode === "both" ? "Correos guardados correctamente." : `Correos de ${mode} guardados.`);
+      })
+      .catch((e) => onError(e instanceof Error ? e.message : "Error guardando correos"))
+      .finally(() => {
+        setSavingPruebas(false); setSavingProduccion(false); setSavingBoth(false);
+      });
+  };
+
+  if (loading) return <div className="p-8 text-center text-slate-500">Cargando configuración de correos de versiones...</div>;
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader title="Parámetros de Correos de Versiones" subtitle="Configure los destinatarios para los correos de pruebas y producción. Misma lógica que Solicitud de Parámetros." />
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+              <div className="p-2 bg-[#0778ac]/10 text-[#0778ac] rounded-xl font-bold">✉</div>
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">Correos — Pruebas</h3>
+                <p className="text-xs text-slate-400">Notificaciones de pruebas</p>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Destinatarios (separados por coma)</label>
+              <textarea
+                value={config.correos_pruebas}
+                onChange={(e) => setConfig({ ...config, correos_pruebas: e.target.value })}
+                placeholder="pruebas@empresa.com, qa@empresa.com"
+                rows={5}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white font-mono"
+              />
+              <p className="mt-1 text-xs text-slate-400">Se aplicará split por coma o punto y coma.</p>
+            </div>
+          </div>
+          <div className="pt-5 mt-4 border-t border-slate-100">
+            <button
+              onClick={() => save(config, "pruebas")}
+              disabled={savingPruebas}
+              className="w-full py-2.5 px-4 rounded-xl bg-[#0778ac] hover:bg-[#066591] text-white text-xs font-bold transition-colors shadow-sm disabled:opacity-50"
+            >
+              {savingPruebas ? "Guardando..." : "Guardar Correos Pruebas"}
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+              <div className="p-2 bg-amber-500/10 text-amber-600 rounded-xl font-bold">✉</div>
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">Correos — Producción</h3>
+                <p className="text-xs text-slate-400">Notificaciones de despliegue</p>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Destinatarios (separados por coma)</label>
+              <textarea
+                value={config.correos_produccion}
+                onChange={(e) => setConfig({ ...config, correos_produccion: e.target.value })}
+                placeholder="produccion@empresa.com, direccion@empresa.com"
+                rows={5}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white font-mono"
+              />
+              <p className="mt-1 text-xs text-slate-400">Formato dd/MM/yyyy hh:mm a.m./p.m. America/Bogota.</p>
+            </div>
+          </div>
+          <div className="pt-5 mt-4 border-t border-slate-100">
+            <button
+              onClick={() => save(config, "produccion")}
+              disabled={savingProduccion}
+              className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors shadow-sm disabled:opacity-50"
+            >
+              {savingProduccion ? "Guardando..." : "Guardar Correos Producción"}
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-slate-800 text-sm">Guardar ambos</h3>
+            <p className="text-xs text-slate-400">Aplica la misma lógica de envío que Solicitud de Parámetros (SMTP reportado por warning si falla).</p>
+          </div>
+          <button
+            onClick={() => save(config, "both")}
+            disabled={savingBoth}
+            className="py-2.5 px-6 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors shadow-sm disabled:opacity-50"
+          >
+            {savingBoth ? "Guardando..." : "Guardar Todo"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -5282,9 +5549,9 @@ function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator
             <Monitor size={26} className="text-[#0778ac]" />
           </div>
           <div className="text-left">
-            <h1 className="text-2xl font-bold text-[#0778ac] tracking-tight">Validacion y Solicitudes</h1>
+            <h1 className="text-2xl font-bold text-[#0778ac] tracking-tight">Gestion de solicitudes y Validacion de Compilaciones</h1>
             <p className="text-[#0778ac]/70 text-xs tracking-widest uppercase font-semibold">
-              Plataforma para Validacion de Dinamica de Prueba y Solicitud de Parametros
+              Plataforma integral para solicitudes, validacion de aprobacion y rechazo de versiones de compilacion.
             </p>
           </div>
         </div>

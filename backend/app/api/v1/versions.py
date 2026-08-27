@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, Header
 from sqlalchemy.orm import Session
+from typing import Optional
 from app.core.database import get_db
 from app.schemas.version import (
     VersionCreate,
@@ -9,6 +10,9 @@ from app.schemas.version import (
     RestauracionDBResponse,
     ReporteFirmasPdfRequest,
     ReporteDetallesPdfRequest,
+    EnviarCorreoVersionRequest,
+    ConfiguracionVersionCorreosDTO,
+    LogCorreoVersionResponse,
 )
 from app.services.version_service import VersionService
 from app.utils.pdf_generator import generate_firmas_report_pdf, generate_detalles_report_pdf
@@ -29,6 +33,34 @@ def listar(db: Session = Depends(get_db)):
 @router.get("/restauraciones", response_model=list[RestauracionDBResponse])
 def listar_restauraciones(db: Session = Depends(get_db)):
     return service.listar_restauraciones(db)
+
+
+@router.get("/config/correos", response_model=ConfiguracionVersionCorreosDTO)
+def get_config_correos(db: Session = Depends(get_db)):
+    conf = service.get_config_correos(db)
+    return {"correos_pruebas": conf.correos_pruebas or "", "correos_produccion": conf.correos_produccion or ""}
+
+
+@router.put("/config/correos", response_model=ConfiguracionVersionCorreosDTO)
+def update_config_correos(data: ConfiguracionVersionCorreosDTO, db: Session = Depends(get_db)):
+    conf = service.update_config_correos(db, data.correos_pruebas or "", data.correos_produccion or "")
+    return {"correos_pruebas": conf.correos_pruebas or "", "correos_produccion": conf.correos_produccion or ""}
+
+
+@router.get("/logs/correos", response_model=list[LogCorreoVersionResponse])
+def listar_logs_correos(version_oid: Optional[int] = None, db: Session = Depends(get_db)):
+    return service.listar_logs(db, version_oid)
+
+
+@router.post("/{oid}/enviar-correo")
+def enviar_correo_version(oid: int, data: EnviarCorreoVersionRequest, db: Session = Depends(get_db), x_user_name: Optional[str] = Header(default=None)):
+    try:
+        usuario = (x_user_name or "").strip() or "Coordinador de Sistemas"
+        return service.enviar_correo_version(db, oid, data.tipo, data.mejoras, data.fecha_despliegue, usuario)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"No fue posible enviar el correo: {exc}") from exc
 
 
 @router.post("/reportes/firmas/pdf")

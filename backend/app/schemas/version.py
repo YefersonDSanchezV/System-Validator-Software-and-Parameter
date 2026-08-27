@@ -1,6 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional
+from typing import Optional, Literal
 
 
 class VersionBase(BaseModel):
@@ -91,3 +91,28 @@ class ReporteDetallesPdfRequest(BaseModel):
     subtitulo: str
     generado_en: str
     filas: list[ReporteDetalleFila]
+
+
+class EnviarCorreoVersionRequest(BaseModel):
+    tipo: Literal["pruebas", "produccion"]
+    mejoras: str = Field(..., min_length=10, description="Descripción de mejoras")
+    fecha_despliegue: Optional[datetime] = Field(default=None, description="Fecha y hora de despliegue para producción")
+
+
+class ConfiguracionVersionCorreosDTO(BaseModel):
+    correos_pruebas: Optional[str] = Field(default="", description="Correos separados por coma para pruebas")
+    correos_produccion: Optional[str] = Field(default="", description="Correos separados por coma para producción")
+
+
+class LogCorreoVersionResponse(BaseModel):
+    oid: int
+    version_oid: Optional[int] = None
+    tipo: str
+    destinatarios: Optional[str] = None
+    asunto: Optional[str] = None
+    mejoras: Optional[str] = None
+    fecha_despliegue: Optional[datetime] = None
+    fecha_envio: datetime
+    usuario: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)

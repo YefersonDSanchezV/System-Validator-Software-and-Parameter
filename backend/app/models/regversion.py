@@ -38,3 +38,26 @@ class RestauracionDB(Base):
     usuario = Column(String(100), nullable=True)
 
     compilacion = relationship("RegVersion")
+
+
+class ConfiguracionVersionCorreos(Base):
+    __tablename__ = "configuracion_version_correos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    correos_pruebas = Column(Text, nullable=True)
+    correos_produccion = Column(Text, nullable=True)
+    updated_at = Column(TIMESTAMP, nullable=True)
+
+
+class LogCorreoVersion(Base):
+    __tablename__ = "log_correos_enviados"
+
+    oid = Column(Integer, primary_key=True, index=True)
+    version_oid = Column(Integer, ForeignKey("regversion.oid", ondelete="SET NULL"), nullable=True)
+    tipo = Column(String(20), nullable=False)
+    destinatarios = Column(Text, nullable=True)
+    asunto = Column(String(300), nullable=True)
+    mejoras = Column(Text, nullable=True)
+    fecha_despliegue = Column(TIMESTAMP, nullable=True)
+    fecha_envio = Column(TIMESTAMP, nullable=False)
+    usuario = Column(String(100), nullable=True)
