@@ -1,6 +1,9 @@
 import logging
 import json
 import socket
+import os
+import shutil
+import subprocess
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from ipaddress import ip_address, IPv4Address, IPv6Address
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -14,6 +17,13 @@ logger = logging.getLogger(__name__)
 _AUDIT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="audit-log-writer")
 _REVERSE_DNS_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="audit-reverse-dns")
 _HOSTNAME_CACHE: dict[str, str] = {}
+_DOCKER_GATEWAY_PREFIXES = tuple(
+    prefix.strip() for prefix in os.getenv("AUDIT_PROXY_IP_PREFIX_BLACKLIST", "172.23.").split(",") if prefix.strip()
+)
+_TRUSTED_PROXY_IPS = {
+    ip.strip() for ip in os.getenv("TRUSTED_PROXY_IPS", "*").split(",")
+    if ip.strip()
+}
 
 
 def detect_modulo(path: str) -> str:
@@ -74,6 +84,14 @@ def _is_private_client_ip(value: str) -> bool:
     return parsed.is_private and not parsed.is_loopback and not parsed.is_link_local
 
 
+def _is_blacklisted_proxy_ip(value: str) -> bool:
+    return any(value.startswith(prefix) for prefix in _DOCKER_GATEWAY_PREFIXES)
+
+
+def _is_trusted_proxy_ip(value: str) -> bool:
+    return "*" in _TRUSTED_PROXY_IPS or value in _TRUSTED_PROXY_IPS
+
+
 def _ip_priority(value: str) -> int:
     parsed = ip_address(value)
 
@@ -110,36 +128,50 @@ def _parse_forwarded_header(value: str | None) -> list[str]:
     return candidates
 
 
+def _first_useful_ip_from_header(value: str | None) -> str | None:
+    if not value:
+        return None
+    for part in value.split(","):
+        candidate = _normalize_ip(part)
+        if _is_valid_ip(candidate) and not _is_blacklisted_proxy_ip(candidate):
+            return candidate
+    return None
+
+
 def extract_client_ip(request: Request) -> str:
+    client = request.client
+    remote_ip = client.host if client else "0.0.0.0"
+    normalized_remote_ip = _normalize_ip(remote_ip)
+    if not _is_valid_ip(normalized_remote_ip):
+        normalized_remote_ip = "0.0.0.0"
+
+    # Lógica replicada del proyecto de referencia:
+    # solo confiar en encabezados de proxy si quien se conecta es un proxy confiable.
+    if _is_trusted_proxy_ip(normalized_remote_ip):
+        for header_name in ("x-client-ip", "x-original-forwarded-for", "x-forwarded-for"):
+            header_ip = _first_useful_ip_from_header(request.headers.get(header_name))
+            if header_ip:
+                return header_ip
+
+        x_real_ip = _normalize_ip(request.headers.get("x-real-ip", ""))
+        if _is_valid_ip(x_real_ip) and not _is_blacklisted_proxy_ip(x_real_ip):
+            return x_real_ip
+
+        forwarded_candidates = _parse_forwarded_header(request.headers.get("forwarded"))
+        for candidate in forwarded_candidates:
+            if not _is_blacklisted_proxy_ip(candidate):
+                return candidate
+
+    if not _is_blacklisted_proxy_ip(normalized_remote_ip):
+        return normalized_remote_ip
+
     header_candidates: list[str] = []
-
-    forwarded = _parse_forwarded_header(request.headers.get("forwarded"))
-    if forwarded:
-        header_candidates.extend(forwarded)
-
-    _append_header_ip_candidates(request.headers.get("x-forwarded-for"), header_candidates)
-
-    for header_name in ("x-real-ip", "x-client-ip", "x-original-forwarded-for", "true-client-ip", "cf-connecting-ip"):
+    for header_name in ("x-client-ip", "x-original-forwarded-for", "x-forwarded-for", "x-real-ip", "true-client-ip", "cf-connecting-ip"):
         _append_header_ip_candidates(request.headers.get(header_name), header_candidates)
+    if header_candidates:
+        return max(header_candidates, key=_ip_priority)
 
-    if request.client and request.client.host and _is_valid_ip(request.client.host):
-        header_candidates.append(request.client.host)
-
-    deduped_candidates: list[str] = []
-    seen = set()
-    for candidate in header_candidates:
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        deduped_candidates.append(candidate)
-
-    private_candidates = [ip for ip in deduped_candidates if _is_private_client_ip(ip)]
-    if private_candidates:
-        return max(private_candidates, key=_ip_priority)
-    if deduped_candidates:
-        return max(deduped_candidates, key=_ip_priority)
-
-    return "127.0.0.1"
+    return normalized_remote_ip
 
 
 def resolve_host_name(client_ip: str) -> str:
@@ -188,6 +220,49 @@ def extract_windows_user(request: Request, fallback_user: str) -> str:
     return fallback_user
 
 
+def enrich_identity_from_netbios(client_ip: str, host_name: str, windows_user: str) -> tuple[str, str]:
+    if not _is_valid_ip(client_ip):
+        return host_name, windows_user
+    parsed = ip_address(client_ip)
+    if parsed.is_loopback or parsed.is_link_local:
+        return host_name, windows_user
+    if not shutil.which("nmblookup"):
+        return host_name, windows_user
+
+    try:
+        result = subprocess.run(
+            ["nmblookup", "-A", client_ip],
+            capture_output=True,
+            text=True,
+            timeout=1.2,
+            check=False,
+        )
+    except Exception:
+        return host_name, windows_user
+
+    if result.returncode != 0:
+        return host_name, windows_user
+
+    machine_candidate = ""
+    user_candidate = ""
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.strip()
+        if "<00>" in line and "ACTIVE" in line and "<GROUP>" not in line and not machine_candidate:
+            machine_candidate = line.split("<00>")[0].strip()
+        if "<03>" in line and "ACTIVE" in line and "<GROUP>" not in line and not user_candidate:
+            user_candidate = line.split("<03>")[0].strip()
+
+    final_host_name = host_name
+    final_windows_user = windows_user
+    if (not final_host_name or final_host_name == "No disponible") and machine_candidate:
+        final_host_name = machine_candidate
+    if user_candidate and user_candidate != machine_candidate:
+        if (not final_windows_user) or final_windows_user in {"Usuario Sistema", "Coordinador de Sistemas"}:
+            final_windows_user = user_candidate
+
+    return final_host_name, final_windows_user
+
+
 def persist_log_entry(
     method: str,
     client_ip: str,
@@ -199,6 +274,7 @@ def persist_log_entry(
     detalle: str,
     payload_json: dict,
 ) -> None:
+    host_name, windows_user = enrich_identity_from_netbios(client_ip, host_name, windows_user)
     try:
         db = SessionLocal()
         try:
@@ -290,6 +366,15 @@ class AuditMiddleware(BaseHTTPMiddleware):
             "nombre_equipo": host_name,
             "usuario_windows_equipo": windows_user,
             "usuario_aplicacion": user,
+            "headers_identidad": {
+                "x_forwarded_for": request.headers.get("x-forwarded-for"),
+                "x_real_ip": request.headers.get("x-real-ip"),
+                "x_client_ip": request.headers.get("x-client-ip"),
+                "x_windows_user": request.headers.get("x-windows-user"),
+                "x_remote_user": request.headers.get("x-remote-user"),
+                "x_authenticated_user": request.headers.get("x-authenticated-user"),
+                "x_client_hostname": request.headers.get("x-client-hostname"),
+            },
             "query_params": dict(request.query_params),
             "body": payload_body,
         }
