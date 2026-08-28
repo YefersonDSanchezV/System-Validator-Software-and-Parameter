@@ -61,6 +61,11 @@ class ReporteFirmaFila(BaseModel):
     fecha_hora: str
     estado: str
     tiene_firma: bool = False
+    firma: Optional[str] = None
+    observacion: Optional[str] = None
+    incidencia: Optional[str] = None
+    ruta: Optional[str] = None
+    captura: Optional[list[str]] = None
 
 
 class ReporteFirmasPdfRequest(BaseModel):
