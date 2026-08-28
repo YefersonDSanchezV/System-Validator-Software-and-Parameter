@@ -265,24 +265,75 @@ class VersionService:
             try:
                 now_bogota = datetime.now(ZoneInfo("America/Bogota"))
                 observaciones = self.observacion_service.listar_por_version(db, oid)
-                filas = [
-                    ReporteFirmaFila(
-                        nombre=str(item.get("nombre") or "Sin nombre"),
-                        cargo=item.get("cargo"),
-                        modulo=str(item.get("modulo") or "OTROS"),
-                        fecha_hora=str(item.get("fechaHora") or "—"),
-                        estado=str(item.get("estado") or "rechazo"),
-                        tiene_firma=bool(item.get("firma")),
-                    )
-                    for item in observaciones
+                # — Replicar lógica idéntica a Reporte de Firmas de Directivos del frontend —
+                # MODULOS y labels iguales a frontend/src/config/constants.ts
+                MODULOS = [
+                    "ADMISIONES","CARTERA","CONTABILIDAD","CONTRATOS_IPS",
+                    "FACTURACION","HOSPITALIZACION","INVENTARIOS","PAGOS",
+                    "TESORERIA","GENERALES_SEGURIDAD","CITAS_MEDICAS",
+                    "HISTORIAS_CLINICAS","ACTIVOS_FIJOS","NOMINA",
+                    "INFORMACION_FINANCIERA_NIIF","GESTION_GERENCIAL",
+                    "WEB_CITAS_MEDICAS","PROGRAMACION_DE_CIRUGIAS","OTROS",
                 ]
-                temas = sorted({str(item.modulo) for item in filas}) if filas else [titulo_comp]
+                MODULO_LABELS = {
+                    "CONTRATOS_IPS": "CONTRATOS IPS",
+                    "GENERALES_SEGURIDAD": "GENERALES & SEGURIDAD",
+                    "CITAS_MEDICAS": "CITAS MEDICAS",
+                    "HISTORIAS_CLINICAS": "HISTORIAS CLINICAS",
+                    "ACTIVOS_FIJOS": "ACTIVOS FIJOS",
+                    "WEB_CITAS_MEDICAS": "WEB CITAS MEDICAS",
+                    "PROGRAMACION_DE_CIRUGIAS": "PROGRAMACION DE CIRUGIAS",
+                }
+                def _label(m: str) -> str:
+                    return MODULO_LABELS.get(m, m)
+                # Filas idénticas al frontend: incluir firma base64, observacion, captura, incidencia, ruta
+                filas = []
+                for item in observaciones:
+                    firma_val = item.get("firma")
+                    # captura puede ser lista o None (observacion_service retorna list or None)
+                    cap = item.get("captura")
+                    if isinstance(cap, str):
+                        cap = [cap]
+                    elif cap is None:
+                        cap = None
+                    elif isinstance(cap, list):
+                        cap = [str(c) for c in cap if c]
+                    else:
+                        cap = None
+                    filas.append(
+                        ReporteFirmaFila(
+                            nombre=str(item.get("nombre") or "Sin nombre"),
+                            cargo=item.get("cargo"),
+                            modulo=str(item.get("modulo") or "OTROS"),
+                            fecha_hora=str(item.get("fechaHora") or "—"),
+                            estado=str(item.get("estado") or "rechazo"),
+                            tiene_firma=bool(firma_val),
+                            firma=firma_val if isinstance(firma_val, str) else None,
+                            observacion=str(item.get("observacion") or ""),
+                            incidencia=item.get("incidencia"),
+                            ruta=item.get("ruta"),
+                            captura=cap,
+                        )
+                    )
+                # Temas: replicar frontend -> lista completa de MODULOS en label + extras
+                obs_modulos_raw = {str(f.modulo) for f in filas}
+                # Si hay observaciones, usar mismos temas que frontend (todos los módulos + extras)
+                if filas:
+                    obs_labels = {_label(m) for m in obs_modulos_raw}
+                    temas_labels_full = [_label(m) for m in MODULOS]
+                    extras = [lbl for lbl in obs_labels if lbl not in temas_labels_full]
+                    temas = temas_labels_full + extras
+                else:
+                    temas = [titulo_comp]
+                # hora_fin = +1 hora como hace el frontend
+                from datetime import timedelta as _td
+                end_bog = now_bogota + _td(hours=1)
                 reporte_payload = ReporteFirmasPdfRequest(
                     version_titulo=titulo_comp,
                     version_descripcion=version.descripcion or "Sin descripción",
-                    fecha_reunion=now_bogota.strftime("%Y-%m-%d"),
+                    fecha_reunion=now_bogota.strftime("%d/%m/%Y"),
                     hora_inicio=now_bogota.strftime("%H:%M"),
-                    hora_fin=now_bogota.strftime("%H:%M"),
+                    hora_fin=end_bog.strftime("%H:%M"),
                     conclusion="Reporte generado automáticamente para soporte del despliegue de producción.",
                     observacion=f"Adjunto automático del acta de firmas para la compilación {titulo_comp}.",
                     temas=temas,
@@ -297,7 +348,7 @@ class VersionService:
                     )
                 )
             except Exception as exc:
-                logger.warning("No se pudo adjuntar el reporte de firmas para versión %s: %s", oid, exc)
+                logger.warning("No se pudo adjuntar el reporte de firmas para versión %s: %s", oid, exc, exc_info=True)
 
         # send email (non-blocking failure)
         try:

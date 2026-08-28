@@ -3486,10 +3486,10 @@ function ReportFirmas({
       ...MODULOS.map((m) => MODULO_LABELS[m] ?? m),
       ...[...obsByModulo].filter((m) => !MODULOS.map((x) => MODULO_LABELS[x] ?? x).includes(m)),
     ];
-    const asistenciaMap = new Map<string, { nombre: string; cargo: string; modulo: string; fecha_hora: string; estado: string; tiene_firma: boolean }>();
+    const asistenciaMap = new Map<string, { nombre: string; cargo: string; modulo: string; fecha_hora: string; estado: string; tiene_firma: boolean; firma: string | null; observacion: string; incidencia: string | null; ruta: string | null; captura: string[] | null }>();
 
     filteredObs.forEach((o) => {
-      const key = `${o.nombre}__${o.cargo ?? ""}__${o.modulo}__${o.fechaHora}__${o.estado}`;
+      const key = `${o.nombre}__${o.cargo ?? ""}__${o.modulo}__${o.fechaHora}__${o.estado}__${o.observacion}`;
       if (!asistenciaMap.has(key)) {
         asistenciaMap.set(key, {
           nombre: o.nombre,
@@ -3498,6 +3498,11 @@ function ReportFirmas({
           fecha_hora: o.fechaHora,
           estado: o.estado,
           tiene_firma: Boolean(o.firma),
+          firma: o.firma || null,
+          observacion: o.observacion || "",
+          incidencia: (o as any).incidencia || null,
+          ruta: (o as any).ruta || null,
+          captura: (o as any).captura || null,
         });
       }
     });
