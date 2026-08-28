@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     VERSION_SMTP_USE_TLS: Optional[bool] = None
     VERSION_SMTP_USE_SSL: Optional[bool] = None
 
+    # Cuenta remitente para notificaciones de solicitudes de acceso.
+    ACCESS_REQUEST_SMTP_HOST: Optional[str] = None
+    ACCESS_REQUEST_SMTP_PORT: Optional[int] = None
+    ACCESS_REQUEST_SMTP_USER: Optional[str] = None
+    ACCESS_REQUEST_SMTP_PASSWORD: Optional[str] = None
+    ACCESS_REQUEST_SMTP_FROM: Optional[str] = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True

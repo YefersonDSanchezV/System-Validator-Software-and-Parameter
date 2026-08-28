@@ -6,6 +6,9 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, engine
 from app.models.solicitud_parametro import SolicitudParametro
+from app.models.solicitud_usuario import SolicitudCreacionUsuario
+from app.models.solicitud_password import SolicitudRestablecimientoPassword
+from app.models.solicitud_usuario import PlataformaSolicitudAcceso, ConfiguracionSolicitudesAcceso
 from app.utils.file_storage import ensure_upload_dir
 
 import logging
@@ -24,6 +27,7 @@ from app.api.v1 import (
     auth, # auth is in api.v1.auth based on dir structure
     reportes, # reportes is in api.v1.reportes
     auditoria,
+    solicitudes_accesos,
 )
 from app.core.audit_middleware import AuditMiddleware
 from app.core.scheduler import init_scheduler
@@ -57,6 +61,10 @@ def initialize_database():
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS motivo_rechazo TEXT"))
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS solicitud_extension VARCHAR(100)"))
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS observacion_resolucion TEXT"))
+        conn.execute(text("ALTER TABLE solicitud_creacion_usuario ADD COLUMN IF NOT EXISTS tipos JSONB"))
+        conn.execute(text("ALTER TABLE solicitud_creacion_usuario ADD COLUMN IF NOT EXISTS firma_cierre_url VARCHAR(300)"))
+        conn.execute(text("ALTER TABLE solicitud_restablecimiento_password ADD COLUMN IF NOT EXISTS firma_cierre_url VARCHAR(300)"))
+        conn.execute(text("UPDATE solicitud_creacion_usuario SET tipos = jsonb_build_array(tipo) WHERE tipos IS NULL AND tipo IS NOT NULL"))
 
         conn.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS nombre_equipo VARCHAR(255)"))
         conn.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS usuario_windows_equipo VARCHAR(255)"))
@@ -89,6 +97,16 @@ def initialize_database():
                 INSERT INTO configuracion_parametros (id, hc_default, enf_hcrenf_default, enf_haplmed_default, hora_restablecimiento, auto_restablecer, tipos_habilitados, updated_at)
                 VALUES (1, 30, 48, 48, '20:05', true, '["Historia Clinica", "Enfermeria", "Otros"]'::json, NOW())
             """))
+
+        acceso_conf = conn.execute(text("SELECT id FROM configuracion_solicitudes_acceso LIMIT 1")).fetchone()
+        if not acceso_conf:
+            conn.execute(text("INSERT INTO configuracion_solicitudes_acceso (id, correos_creacion, correos_restablecimiento) VALUES (1, '', '')"))
+        plataforma_count = conn.execute(text("SELECT COUNT(*) FROM plataforma_solicitud_acceso")).scalar() or 0
+        if plataforma_count == 0:
+            for nombre in ("Usuario Dinamica", "Usuario", "Almera", "Usuario Enterprise", "Todos"):
+                conn.execute(text("INSERT INTO plataforma_solicitud_acceso (nombre, modulo, activa) VALUES (:nombre, 'creacion_usuario', true)"), {"nombre": nombre})
+            for nombre in ("Dinamica", "Enterprise", "Almera", "Otros"):
+                conn.execute(text("INSERT INTO plataforma_solicitud_acceso (nombre, modulo, activa) VALUES (:nombre, 'restablecimiento_password', true)"), {"nombre": nombre})
 
         conn.execute(text("ALTER TABLE boletines ADD COLUMN IF NOT EXISTS mes INTEGER"))
         conn.execute(text("ALTER TABLE boletines ADD COLUMN IF NOT EXISTS anio INTEGER"))
@@ -163,6 +181,7 @@ app.include_router(solicitud_parametro.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(parametros_clinicos.router, prefix="/api/v1")
 app.include_router(auditoria.router, prefix="/api/v1")
+app.include_router(solicitudes_accesos.router, prefix="/api/v1")
 
 
 @app.get("/")

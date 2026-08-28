@@ -4,7 +4,7 @@ import {
   XCircle, Download, Plus, ExternalLink, FileText, BookOpen,
   BarChart3, ArrowLeft, Upload, Printer, AlertCircle,
   ChevronDown, ChevronRight, Settings, Home, ClipboardList,
-  Link, RotateCcw, Mail,
+  Link, RotateCcw, Mail, UserPlus, KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
@@ -18,6 +18,7 @@ import { type ApiBoletin, type ApiBoletinPeriodo, type ApiBoletinImportResult } 
 import { type ApiManual, type SolicitudManual } from "@/types/manual";
 import { type ApiSolicitudParametro, type SolicitudParametro, type EstadoSolicitud, type ConfiguracionParametrosDTO, toSolicitudParametro } from "@/types/solicitud-parametro";
 import { type ParametrosEstado } from "@/types/parametros";
+import { AccessPlatformsConfig, PasswordResetRequests, UserCreationRequests } from "@/features/solicitudes-accesos/AccessRequestSections";
 
 const DEFAULT_DB_CONTAINERS = ["DGEMPRES99", "DGEMPRES98", "DGEMPRES10"] as const;
 const PAGE_SIZE_OPTIONS = [10, 20, 30] as const;
@@ -1957,7 +1958,7 @@ function AuditoriaSection({ submodulo }: { submodulo: AuditSubmodulo }) {
 
 // ─── Coordinator Module ───────────────────────────────────────────────────────
 
-type CoordTab = "registro" | "restaurarDB" | "consulta" | "consultaVersiones" | "versionParametros" | "detalles" | "solicitudParametro" | "parametrosConfig" | "reporteFirmas" | "reporteDetalles" | "solicitudesManuales" | "auditoria";
+type CoordTab = "registro" | "restaurarDB" | "consulta" | "consultaVersiones" | "versionParametros" | "detalles" | "solicitudParametro" | "solicitudUsuario" | "solicitudPassword" | "parametrosConfig" | "reporteFirmas" | "reporteDetalles" | "solicitudesManuales" | "auditoria";
 
 function CoordinatorModule({
   versions, setVersions, observaciones, setObservaciones, onError,
@@ -2138,7 +2139,7 @@ function CoordinatorModule({
             }`}
           >
             <ClipboardList size={14} />
-            Solicitud de Parámetro
+            Solicitudes
             <ChevronDown
               size={12}
               className={`transition-transform ${solicitudOpen ? "rotate-180" : ""}`}
@@ -2155,6 +2156,18 @@ function CoordinatorModule({
                 }`}
               >
                 Habilitación de Parámetro
+              </button>
+              <button
+                onClick={() => goToSection("solicitudUsuario")}
+                className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
+              >
+                Creación de Usuario
+              </button>
+              <button
+                onClick={() => goToSection("solicitudPassword")}
+                className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
+              >
+                Restablecimiento de contraseña
               </button>
               <button
                 onClick={() => goToSection("parametrosConfig")}
@@ -2336,8 +2349,14 @@ function CoordinatorModule({
             canHabilitarParametro={true}
           />
         )}
+        {activeSection === "solicitudUsuario" && (
+          <UserCreationRequests onError={onError} admin />
+        )}
+        {activeSection === "solicitudPassword" && (
+          <PasswordResetRequests onError={onError} admin />
+        )}
         {activeSection === "parametrosConfig" && (
-          <ParametrosConfigSection onError={onError} />
+          <><ParametrosConfigSection onError={onError} /><AccessPlatformsConfig onError={onError} /></>
         )}
         {activeSection === "reportes" && tab === "reporteFirmas" && (
           <ReportFirmas versions={versions} observaciones={observaciones} />
@@ -5757,7 +5776,7 @@ function SolicitudesManualesSection({ onError }: { onError: (msg: string) => voi
 
 // ─── Home / Module Selector ───────────────────────────────────────────────────
 
-function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator" | "solicitud") => void }) {
+function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator" | "solicitud" | "creacionUsuario" | "restablecimientoPassword") => void }) {
   return (
     <div className="min-h-screen bg-[#f8f9fa] flex flex-col items-center justify-center p-8">
       <div className="text-center mb-14">
@@ -5778,7 +5797,7 @@ function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 w-full max-w-5xl">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-5 w-full max-w-7xl">
         <button
           onClick={() => onSelect("coordinator")}
           className="group bg-white border border-slate-200 hover:border-[#0778ac]/40 rounded-3xl p-8 text-left transition-all duration-200 shadow-sm hover:shadow-xl h-full"
@@ -5792,6 +5811,34 @@ function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator
           <p className="text-slate-600 text-sm leading-relaxed">
             Gestión de versiones del sistema, consulta de validaciones por módulo y generación de reportes ejecutivos.
           </p>
+          <div className="mt-6 flex items-center gap-1.5 text-[#0778ac] text-xs font-semibold group-hover:gap-2.5 transition-all uppercase tracking-wide">
+            Ingresar <ChevronRight size={14} />
+          </div>
+        </button>
+
+        <button
+          onClick={() => onSelect("creacionUsuario")}
+          className="group bg-white border border-slate-200 hover:border-[#0778ac]/40 rounded-3xl p-8 text-left transition-all duration-200 shadow-sm hover:shadow-xl h-full"
+        >
+          <div className="w-12 h-12 bg-[#0778ac]/15 group-hover:bg-[#0778ac]/25 border border-[#0778ac]/20 rounded-2xl flex items-center justify-center mb-6 transition-all">
+            <UserPlus size={22} className="text-[#0778ac]" />
+          </div>
+          <h2 className="text-base font-bold text-slate-900 mb-2">Solicitudes de Creación de Usuario</h2>
+          <p className="text-slate-600 text-sm leading-relaxed">Registre solicitudes de creación de usuarios y adjunte la firma del solicitante.</p>
+          <div className="mt-6 flex items-center gap-1.5 text-[#0778ac] text-xs font-semibold group-hover:gap-2.5 transition-all uppercase tracking-wide">
+            Ingresar <ChevronRight size={14} />
+          </div>
+        </button>
+
+        <button
+          onClick={() => onSelect("restablecimientoPassword")}
+          className="group bg-white border border-slate-200 hover:border-[#0778ac]/40 rounded-3xl p-8 text-left transition-all duration-200 shadow-sm hover:shadow-xl h-full"
+        >
+          <div className="w-12 h-12 bg-[#0778ac]/15 group-hover:bg-[#0778ac]/25 border border-[#0778ac]/20 rounded-2xl flex items-center justify-center mb-6 transition-all">
+            <KeyRound size={22} className="text-[#0778ac]" />
+          </div>
+          <h2 className="text-base font-bold text-slate-900 mb-2">Solicitudes de Restablecimiento de Contraseña</h2>
+          <p className="text-slate-600 text-sm leading-relaxed">Solicite el restablecimiento de contraseñas para las plataformas disponibles.</p>
           <div className="mt-6 flex items-center gap-1.5 text-[#0778ac] text-xs font-semibold group-hover:gap-2.5 transition-all uppercase tracking-wide">
             Ingresar <ChevronRight size={14} />
           </div>
@@ -5845,7 +5892,7 @@ function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator
 // ─── App Root ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [module, setModule] = useState<"home" | "coordinator" | "validator" | "solicitud">("home");
+  const [module, setModule] = useState<"home" | "coordinator" | "validator" | "solicitud" | "creacionUsuario" | "restablecimientoPassword">("home");
   const [coordinatorLoggedIn, setCoordinatorLoggedIn] = useState(false);
   const [loggedUser, setLoggedUser] = useState("");
   const [coordinatorLogin, setCoordinatorLogin] = useState({ usuario: "", password: "" });
@@ -5916,6 +5963,23 @@ export default function App() {
             onError={setError}
             canApprove={false}
           />
+        </div>
+      </div></>
+    );
+  }
+
+  if (module === "creacionUsuario" || module === "restablecimientoPassword") {
+    const esCreacion = module === "creacionUsuario";
+    const titulo = esCreacion ? "Solicitudes de Creación de Usuario" : "Solicitudes de Restablecimiento de Contraseña";
+    return (
+      <><Toaster /><div className="h-screen flex flex-col overflow-hidden" style={{ fontFamily: "'Inter', sans-serif" }}>
+        <div className="bg-[#0778ac] text-white px-5 h-11 flex items-center justify-between shrink-0 border-b border-[#0778ac]/40">
+          <div className="flex items-center gap-2.5"><Monitor size={16} /><span className="text-sm font-bold">Validación y Solicitudes</span><span className="text-white/60">/</span><span className="text-sm text-white/85">{titulo}</span></div>
+          <button onClick={returnToHome} className="text-xs text-white/85 hover:text-white flex items-center gap-1 transition-colors font-medium"><Home size={12} /> Inicio</button>
+        </div>
+        <div className="flex-1 overflow-auto bg-[#f8f9fa] p-6">
+          {error && <div className="mb-6 rounded-lg border border-[#d43a39]/20 bg-[#d43a39]/10 p-3 text-sm text-[#d43a39]">{error}</div>}
+          {esCreacion ? <UserCreationRequests onError={setError} /> : <PasswordResetRequests onError={setError} />}
         </div>
       </div></>
     );

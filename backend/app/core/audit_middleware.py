@@ -42,6 +42,10 @@ def detect_modulo(path: str) -> str:
         return "Manuales de Usuario"
     if "/solicitud-parametro" in path_lower:
         return "Habilitación de Parámetro"
+    if "/solicitudes-accesos/creacion-usuarios" in path_lower:
+        return "Solicitudes de Creación de Usuario"
+    if "/solicitudes-accesos/restablecimientos-password" in path_lower:
+        return "Solicitudes de Restablecimiento de Contraseña"
     if "/parametros-clinicos" in path_lower:
         return "Parámetros Clínicos"
     if "/observaciones" in path_lower:
