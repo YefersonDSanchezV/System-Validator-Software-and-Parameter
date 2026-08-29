@@ -3027,10 +3027,10 @@ function VersionQuery({
             </div>
 
             <FormTextarea
-              label={correoTipo==="pruebas" ? "Descripción de mejoras de esta compilación *" : "Detalles de mejora *"}
+              label={correoTipo==="pruebas" ? "Detalles de Compilación *" : "Detalles de Compilación *"}
               required
               rows={5}
-              placeholder={correoTipo==="pruebas" ? "Describa las mejoras/cambios incluidos en esta compilación..." : "Detalle las mejoras, correcciones e impactos de la versión estable..."}
+              placeholder={correoTipo==="pruebas" ? "Describa los detalles de compilación, mejoras y cambios incluidos..." : "Detalle las mejoras, correcciones e impactos de la versión estable..."}
               value={correoMejoras}
               onChange={(e) => setCorreoMejoras(e.target.value)}
             />
@@ -5811,7 +5811,7 @@ function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator
             <Settings size={22} className="text-[#0778ac]" />
           </div>
           <h2 className="text-base font-bold text-slate-900 mb-2">
-            Adminsitrador de Sistemas
+            Administrador de Sistemas
           </h2>
           <p className="text-slate-600 text-sm leading-relaxed">
             Gestión de versiones del sistema, consulta de validaciones por módulo y generación de reportes ejecutivos.
@@ -5829,7 +5829,7 @@ function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator
             <UserPlus size={22} className="text-[#0778ac]" />
           </div>
           <h2 className="text-base font-bold text-slate-900 mb-2">Solicitudes de Creación de Usuario</h2>
-          <p className="text-slate-600 text-sm leading-relaxed">Registre solicitudes de creación de usuarios y adjunte la firma del solicitante.</p>
+          <p className="text-slate-600 text-sm leading-relaxed">Módulo para solicitar la creación y habilitación de usuarios o correos laborales para ingreso de nuevos funcionarios.</p>
           <div className="mt-6 flex items-center gap-1.5 text-[#0778ac] text-xs font-semibold group-hover:gap-2.5 transition-all uppercase tracking-wide">
             Ingresar <ChevronRight size={14} />
           </div>
@@ -5843,7 +5843,7 @@ function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator
             <KeyRound size={22} className="text-[#0778ac]" />
           </div>
           <h2 className="text-base font-bold text-slate-900 mb-2">Solicitudes de Restablecimiento de Contraseña</h2>
-          <p className="text-slate-600 text-sm leading-relaxed">Solicite el restablecimiento de contraseñas para las plataformas disponibles.</p>
+          <p className="text-slate-600 text-sm leading-relaxed">Módulo para solicitar el restablecimiento de contraseñas para las plataformas disponibles.</p>
           <div className="mt-6 flex items-center gap-1.5 text-[#0778ac] text-xs font-semibold group-hover:gap-2.5 transition-all uppercase tracking-wide">
             Ingresar <ChevronRight size={14} />
           </div>
@@ -5860,7 +5860,7 @@ function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator
             Validación del Sistema
           </h2>
           <p className="text-slate-600 text-sm leading-relaxed">
-            Registro de observaciones, aprobaciones y rechazos por módulo. Acceso a boletines y manuales de usuario.
+            Módulo para el Registro de observaciones, aprobaciones y rechazos por módulo. Acceso a boletines y manuales de usuario.
           </p>
           <div className="mt-6 flex items-center gap-1.5 text-[#d43a39] text-xs font-semibold group-hover:gap-2.5 transition-all uppercase tracking-wide">
             Ingresar <ChevronRight size={14} />

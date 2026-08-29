@@ -200,7 +200,7 @@ class VersionService:
                         </tr>
                     </table>
 
-                    <h3 style="margin-bottom: 5px; color: #2c3e50;">Mejoras de esta compilación:</h3>
+                    <h3 style="margin-bottom: 5px; color: #2c3e50;">Detalles de Compilación:</h3>
                     <div style="{estilo_bloque_mejoras}">{mejoras_html}</div>
 
                     <!-- SE INYECTA LA FIRMA AL FINAL DE PRUEBAS -->
@@ -235,7 +235,7 @@ class VersionService:
 
                     <p style="font-size: 13px; color: #555; font-style: italic;">Esta versión superó un proceso de validación exhaustivo por las diferentes áreas, alcanzando un nivel de confiabilidad del 99% desde su liberación hasta el {fecha_envio_str}. Se define como versión estable para producción.</p>
 
-                    <h3 style="margin-bottom: 5px; color: #1a5276;">Detalles de mejora:</h3>
+                    <h3 style="margin-bottom: 5px; color: #1a5276;">Detalles de Compilación:</h3>
                     <div style="{estilo_bloque_mejoras}">{mejoras_html}</div>
 
                     <div style="{estilo_alerta}">

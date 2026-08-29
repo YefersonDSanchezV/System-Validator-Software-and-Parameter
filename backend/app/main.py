@@ -101,12 +101,18 @@ def initialize_database():
         acceso_conf = conn.execute(text("SELECT id FROM configuracion_solicitudes_acceso LIMIT 1")).fetchone()
         if not acceso_conf:
             conn.execute(text("INSERT INTO configuracion_solicitudes_acceso (id, correos_creacion, correos_restablecimiento) VALUES (1, '', '')"))
-        plataforma_count = conn.execute(text("SELECT COUNT(*) FROM plataforma_solicitud_acceso")).scalar() or 0
-        if plataforma_count == 0:
-            for nombre in ("Usuario Dinamica", "Usuario", "Almera", "Usuario Enterprise", "Todos"):
-                conn.execute(text("INSERT INTO plataforma_solicitud_acceso (nombre, modulo, activa) VALUES (:nombre, 'creacion_usuario', true)"), {"nombre": nombre})
-            for nombre in ("Dinamica", "Enterprise", "Almera", "Otros"):
-                conn.execute(text("INSERT INTO plataforma_solicitud_acceso (nombre, modulo, activa) VALUES (:nombre, 'restablecimiento_password', true)"), {"nombre": nombre})
+
+        plat_exists = conn.execute(text("SELECT oid FROM plataforma_solicitud_acceso LIMIT 1")).fetchone()
+        if not plat_exists:
+            conn.execute(text("""
+                INSERT INTO plataforma_solicitud_acceso (nombre, modulo, activa) VALUES
+                ('Almera', 'creacion_usuario', true),
+                ('Almera', 'restablecimiento_password', true),
+                ('Dinamica', 'creacion_usuario', true),
+                ('Dinamica', 'restablecimiento_password', true),
+                ('Enterprise', 'creacion_usuario', true),
+                ('Enterprise', 'restablecimiento_password', true)
+            """))
 
         conn.execute(text("ALTER TABLE boletines ADD COLUMN IF NOT EXISTS mes INTEGER"))
         conn.execute(text("ALTER TABLE boletines ADD COLUMN IF NOT EXISTS anio INTEGER"))

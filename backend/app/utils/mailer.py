@@ -101,6 +101,7 @@ def send_email(
     mailer_config: MailerConfig | None = None,
     include_inline_signature: bool = True,
     attachments: list[MailAttachment] | None = None,
+    custom_signature_path: str | None = None,
 ) -> None:
     if not recipients:
         return
@@ -114,6 +115,18 @@ def send_email(
     if is_html:
         body_container = MIMEMultipart("related")
         body_container.attach(MIMEText(body, "html", "utf-8"))
+
+        if custom_signature_path and os.path.isfile(custom_signature_path):
+            try:
+                with open(custom_signature_path, "rb") as f:
+                    custom_data = f.read()
+                img_custom = MIMEImage(custom_data)
+                img_custom.add_header("Content-ID", "<firma_custom>")
+                img_custom.add_header("Content-Disposition", "inline", filename=os.path.basename(custom_signature_path))
+                body_container.attach(img_custom)
+                logger.info("Firma personalizada adjuntada correctamente desde: %s", custom_signature_path)
+            except Exception as e:
+                logger.error("Error al adjuntar firma personalizada: %s", e)
 
         ruta_firma = _find_signature_image_path() if include_inline_signature else None
 
