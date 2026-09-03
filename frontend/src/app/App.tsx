@@ -4,7 +4,7 @@ import {
   XCircle, Download, Plus, ExternalLink, FileText, BookOpen,
   BarChart3, ArrowLeft, Upload, Printer, AlertCircle,
   ChevronDown, ChevronRight, Settings, Home, ClipboardList,
-  Link, RotateCcw, Mail, UserPlus, KeyRound,
+  Link, RotateCcw, Mail, UserPlus, KeyRound, Trash2, Folder, Search, Menu,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
@@ -1958,7 +1958,21 @@ function AuditoriaSection({ submodulo }: { submodulo: AuditSubmodulo }) {
 
 // ─── Coordinator Module ───────────────────────────────────────────────────────
 
-type CoordTab = "registro" | "restaurarDB" | "consulta" | "consultaVersiones" | "versionParametros" | "detalles" | "solicitudParametro" | "solicitudUsuario" | "solicitudPassword" | "parametrosConfig" | "reporteFirmas" | "reporteDetalles" | "solicitudesManuales" | "auditoria";
+type CoordTab =
+  | "registro"
+  | "restaurarDB"
+  | "consultaVersiones"
+  | "consultaRestauracionDB"
+  | "versionParametros"
+  | "detalles"
+  | "solicitudParametro"
+  | "solicitudUsuario"
+  | "solicitudPassword"
+  | "parametrosConfig"
+  | "reporteFirmas"
+  | "reporteDetalles"
+  | "solicitudesManuales"
+  | "auditoria";
 
 function CoordinatorModule({
   versions, setVersions, observaciones, setObservaciones, onError,
@@ -1976,13 +1990,19 @@ function CoordinatorModule({
   onSelectSection: React.Dispatch<React.SetStateAction<CoordTab>>;
 }) {
   const [tab, setTab] = useState<CoordTab>(selectedSection);
-  const [activeSection, setActiveSection] = useState<CoordTab | "reportes" | "documentos" | "solicitudesDropdown">(selectedSection);
-  const [registroOpen, setRegistroOpen] = useState(false);
-  const [consultaOpen, setConsultaOpen] = useState(false);
-  const [solicitudOpen, setSolicitudOpen] = useState(false);
-  const [reportsOpen, setReportsOpen] = useState(false);
-  const [documentsOpen, setDocumentsOpen] = useState(false);
-  const [auditoriaOpen, setAuditoriaOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<CoordTab>(selectedSection);
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({
+    procesos: true,
+    consultaVersion: true,
+    detalles: true,
+    solicitudes: true,
+    reportes: true,
+    documentos: true,
+    auditoria: true,
+  });
+
   const [auditoriaSubmodulo, setAuditoriaSubmodulo] = useState<AuditSubmodulo>("LOGS_SISTEMAS");
   const [documentView, setDocumentView] = useState<"boletines" | "manuales" | "solicitudesManuales" | null>(null);
   const [solicitudes, setSolicitudes] = useState<SolicitudParametro[]>([]);
@@ -1992,333 +2012,403 @@ function CoordinatorModule({
     setActiveSection(selectedSection);
   }, [selectedSection]);
 
-  const goToSection = (section: CoordTab) => {
-    const normalized = section === "consulta" ? "consultaVersiones" as CoordTab : section;
-    setTab(normalized);
-    setActiveSection(normalized as any);
-    onSelectSection(normalized);
-    setRegistroOpen(false);
-    setConsultaOpen(false);
-    setSolicitudOpen(false);
-    setReportsOpen(false);
-    setDocumentsOpen(false);
-    setAuditoriaOpen(false);
-    setDocumentView(null);
+  const goToSection = (section: CoordTab, docView?: "boletines" | "manuales" | null, auditSub?: AuditSubmodulo) => {
+    setTab(section);
+    setActiveSection(section);
+    onSelectSection(section);
+    if (docView !== undefined) setDocumentView(docView);
+    if (auditSub !== undefined) setAuditoriaSubmodulo(auditSub);
   };
 
+  const toggleFolder = (folderKey: string) => {
+    setOpenFolders((prev) => ({ ...prev, [folderKey]: !prev[folderKey] }));
+  };
+
+  const usernameDisplay = (loggedUser || "YEFERSON.SANCHEZ").toUpperCase();
+  const matchesSearch = (text: string) => !searchQuery.trim() || text.toLowerCase().includes(searchQuery.toLowerCase());
+
   return (
-    <div className="flex flex-col h-full">
-      <nav className="bg-[#0778ac] text-white px-4 flex items-center gap-1 h-13 shrink-0">
-        <span className="text-xs font-bold tracking-widest uppercase text-white/90 mr-4 shrink-0">
-          COORDINADOR
-        </span>
+    <div className="flex flex-row h-full overflow-hidden w-full bg-[#f8f9fa]">
+      {/* Sidebar Lateral Izquierdo (Estilo DGH) */}
+      <aside className="w-64 shrink-0 bg-[#212529] text-white flex flex-col h-full shadow-xl z-20 select-none font-sans">
+        {/* Header Superior DGH */}
+        <div className="bg-[#0091ea] text-white px-4 h-12 flex items-center gap-3 shrink-0 shadow-md">
+          <Menu size={18} className="cursor-pointer hover:opacity-80" />
+          <span className="text-base font-bold tracking-wider">DGH</span>
+        </div>
 
-        {/* Dropdown Registro */}
-        <div className="relative">
-          <button
-            onClick={() => {
-              setRegistroOpen(!registroOpen);
-              setSolicitudOpen(false);
-              setReportsOpen(false);
-              setDocumentsOpen(false);
-              setAuditoriaOpen(false);
-            }}
-            className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
-              activeSection === "registro" || activeSection === "restaurarDB"
-                ? "border-white text-white bg-white/10"
-                : "border-transparent text-white/85 hover:text-white hover:border-white/60"
-            }`}
-          >
-            <Plus size={14} />
-            Registro
-            <ChevronDown
-              size={12}
-              className={`transition-transform ${registroOpen ? "rotate-180" : ""}`}
+        {/* Info Usuario */}
+        <div className="px-4 py-3 flex items-center gap-3 border-b border-slate-700/50 bg-[#1a1d21]">
+          <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-white shrink-0 font-bold text-xs">
+            {usernameDisplay.slice(0, 2)}
+          </div>
+          <div className="overflow-hidden">
+            <p className="text-xs font-bold text-slate-100 truncate" title={usernameDisplay}>
+              {usernameDisplay}
+            </p>
+            <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">COORDINADOR</p>
+          </div>
+        </div>
+
+        {/* Buscador de Opciones */}
+        <div className="p-3 border-b border-slate-700/50">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-[#16181b] text-slate-200 text-xs rounded-lg pl-8 pr-3 py-1.5 border border-slate-700 focus:outline-none focus:border-[#0091ea]"
             />
-          </button>
-          {registroOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-56">
-              <button
-                onClick={() => goToSection("registro")}
-                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                  activeSection === "registro"
-                    ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
-                    : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
-                }`}
-              >
-                Versión
-              </button>
-              <button
-                onClick={() => goToSection("restaurarDB")}
-                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                  activeSection === "restaurarDB"
-                    ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
-                    : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
-                }`}
-              >
-                Restaurar DB
-              </button>
-            </div>
-          )}
+          </div>
         </div>
 
-        {/* Dropdown Consulta de Versión */}
-        <div className="relative">
-          <button
-            onClick={() => {
-              setConsultaOpen(!consultaOpen);
-              setRegistroOpen(false);
-              setSolicitudOpen(false);
-              setReportsOpen(false);
-              setDocumentsOpen(false);
-              setAuditoriaOpen(false);
-            }}
-            className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
-              activeSection === "consultaVersiones" || activeSection === "consulta" || activeSection === "versionParametros"
-                ? "border-white text-white bg-white/10"
-                : "border-transparent text-white/85 hover:text-white hover:border-white/60"
-            }`}
-          >
-            <ClipboardList size={14} />
-            Consulta de Versión
-            <ChevronDown size={12} className={`transition-transform ${consultaOpen ? "rotate-180" : ""}`} />
-          </button>
-          {consultaOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-60">
-              <button
-                onClick={() => goToSection("consultaVersiones")}
-                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                  activeSection === "consultaVersiones" || activeSection === "consulta"
-                    ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
-                    : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
-                }`}
-              >
-                Consultar versiones
-              </button>
-              <button
-                onClick={() => goToSection("versionParametros")}
-                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                  activeSection === "versionParametros"
-                    ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
-                    : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
-                }`}
-              >
-                Parámetros
-              </button>
-            </div>
-          )}
+        {/* Lista de Menús Colapsables */}
+        <div className="flex-1 overflow-y-auto py-2 text-xs divide-y divide-slate-800/40">
+          {/* Home */}
+          <div className="px-2 py-1">
+            <button
+              onClick={() => goToSection("registro")}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-semibold transition-all ${
+                activeSection === "registro" ? "bg-[#0091ea] text-white font-bold" : "text-slate-300 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              <Home size={14} /> Home
+            </button>
+          </div>
+
+          {/* Folder: Procesos */}
+          <div className="px-2 py-1 space-y-1">
+            <button
+              onClick={() => toggleFolder("procesos")}
+              className="w-full flex items-center justify-between px-3 py-2 text-slate-200 hover:text-white font-bold rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-[#0091ea]">
+                <Folder size={15} fill="#0091ea" />
+                <span>Procesos</span>
+              </div>
+              <ChevronDown size={12} className={`transition-transform ${openFolders.procesos ? "rotate-180" : ""}`} />
+            </button>
+
+            {openFolders.procesos && (
+              <div className="pl-6 space-y-0.5">
+                {matchesSearch("Versión") && (
+                  <button
+                    onClick={() => goToSection("registro")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "registro" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>Registro de Versión</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+                {matchesSearch("Restaurar DB") && (
+                  <button
+                    onClick={() => goToSection("restaurarDB")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "restaurarDB" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>Restaurar DB</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Folder: Consulta de Versión (Req 2) */}
+          <div className="px-2 py-1 space-y-1">
+            <button
+              onClick={() => toggleFolder("consultaVersion")}
+              className="w-full flex items-center justify-between px-3 py-2 text-slate-200 hover:text-white font-bold rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-[#0091ea]">
+                <Folder size={15} fill="#0091ea" />
+                <span>Consulta de Versión</span>
+              </div>
+              <ChevronDown size={12} className={`transition-transform ${openFolders.consultaVersion ? "rotate-180" : ""}`} />
+            </button>
+
+            {openFolders.consultaVersion && (
+              <div className="pl-6 space-y-0.5">
+                {matchesSearch("Consultar versión") && (
+                  <button
+                    onClick={() => goToSection("consultaVersiones")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "consultaVersiones" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>1. Consultar versión</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+                {matchesSearch("Consultar restauración Base Datos") && (
+                  <button
+                    onClick={() => goToSection("consultaRestauracionDB")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "consultaRestauracionDB" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>2. Consultar restauración BD</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+                {matchesSearch("Parámetros") && (
+                  <button
+                    onClick={() => goToSection("versionParametros")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "versionParametros" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>3. Parámetros</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Folder: Detalles de Validación */}
+          <div className="px-2 py-1 space-y-1">
+            <button
+              onClick={() => toggleFolder("detalles")}
+              className="w-full flex items-center justify-between px-3 py-2 text-slate-200 hover:text-white font-bold rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-[#0091ea]">
+                <Folder size={15} fill="#0091ea" />
+                <span>Detalles</span>
+              </div>
+              <ChevronDown size={12} className={`transition-transform ${openFolders.detalles ? "rotate-180" : ""}`} />
+            </button>
+
+            {openFolders.detalles && (
+              <div className="pl-6 space-y-0.5">
+                {matchesSearch("Detalles de Validación") && (
+                  <button
+                    onClick={() => goToSection("detalles")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "detalles" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>Detalles de Validación</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Folder: Solicitudes */}
+          <div className="px-2 py-1 space-y-1">
+            <button
+              onClick={() => toggleFolder("solicitudes")}
+              className="w-full flex items-center justify-between px-3 py-2 text-slate-200 hover:text-white font-bold rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-[#0091ea]">
+                <Folder size={15} fill="#0091ea" />
+                <span>Solicitudes</span>
+              </div>
+              <ChevronDown size={12} className={`transition-transform ${openFolders.solicitudes ? "rotate-180" : ""}`} />
+            </button>
+
+            {openFolders.solicitudes && (
+              <div className="pl-6 space-y-0.5">
+                {matchesSearch("Habilitación de Parámetro") && (
+                  <button
+                    onClick={() => goToSection("solicitudParametro")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "solicitudParametro" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>Habilitación de Parámetro</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+                {matchesSearch("Creación de Usuario") && (
+                  <button
+                    onClick={() => goToSection("solicitudUsuario")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "solicitudUsuario" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>Creación de Usuario</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+                {matchesSearch("Restablecimiento de contraseña") && (
+                  <button
+                    onClick={() => goToSection("solicitudPassword")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "solicitudPassword" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>Restablecimiento de contraseña</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+                {matchesSearch("Parámetros Config") && (
+                  <button
+                    onClick={() => goToSection("parametrosConfig")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "parametrosConfig" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>Parámetros Generales</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Folder: Reportes */}
+          <div className="px-2 py-1 space-y-1">
+            <button
+              onClick={() => toggleFolder("reportes")}
+              className="w-full flex items-center justify-between px-3 py-2 text-slate-200 hover:text-white font-bold rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-[#0091ea]">
+                <Folder size={15} fill="#0091ea" />
+                <span>Reportes</span>
+              </div>
+              <ChevronDown size={12} className={`transition-transform ${openFolders.reportes ? "rotate-180" : ""}`} />
+            </button>
+
+            {openFolders.reportes && (
+              <div className="pl-6 space-y-0.5">
+                {matchesSearch("Reporte de Firmas de Directivos") && (
+                  <button
+                    onClick={() => goToSection("reporteFirmas")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "reporteFirmas" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>Reportes Generados</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+                {matchesSearch("Reporte de Detalles de Validación") && (
+                  <button
+                    onClick={() => goToSection("reporteDetalles")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "reporteDetalles" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>Indicadores Generados</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Folder: Documentos */}
+          <div className="px-2 py-1 space-y-1">
+            <button
+              onClick={() => toggleFolder("documentos")}
+              className="w-full flex items-center justify-between px-3 py-2 text-slate-200 hover:text-white font-bold rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-[#0091ea]">
+                <Folder size={15} fill="#0091ea" />
+                <span>Utilidades / Docs</span>
+              </div>
+              <ChevronDown size={12} className={`transition-transform ${openFolders.documentos ? "rotate-180" : ""}`} />
+            </button>
+
+            {openFolders.documentos && (
+              <div className="pl-6 space-y-0.5">
+                {matchesSearch("Boletines Técnicos") && (
+                  <button
+                    onClick={() => goToSection("documentos", "boletines")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "documentos" && documentView === "boletines" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>Boletines Técnicos</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+                {matchesSearch("Manuales de Usuarios") && (
+                  <button
+                    onClick={() => goToSection("documentos", "manuales")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "documentos" && documentView === "manuales" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>Manuales de Usuarios</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+                {matchesSearch("Solicitudes de manuales") && (
+                  <button
+                    onClick={() => goToSection("solicitudesManuales")}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                      activeSection === "solicitudesManuales" ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <span>Solicitudes de manuales</span>
+                    <ExternalLink size={11} className="opacity-60" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Folder: Auditoría */}
+          <div className="px-2 py-1 space-y-1">
+            <button
+              onClick={() => toggleFolder("auditoria")}
+              className="w-full flex items-center justify-between px-3 py-2 text-slate-200 hover:text-white font-bold rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-[#0091ea]">
+                <Folder size={15} fill="#0091ea" />
+                <span>Auditoría</span>
+              </div>
+              <ChevronDown size={12} className={`transition-transform ${openFolders.auditoria ? "rotate-180" : ""}`} />
+            </button>
+
+            {openFolders.auditoria && (
+              <div className="pl-6 space-y-0.5">
+                {([
+                  ["LOGS_SISTEMAS", "Logs Sistemas"],
+                  ["LOGS_DESCARGAS", "Logs Descargas"],
+                  ["LOGS_ACCESOS", "Logs Accesos"],
+                ] as const).map(([key, label]) => (
+                  matchesSearch(label) && (
+                    <button
+                      key={key}
+                      onClick={() => goToSection("auditoria", null, key)}
+                      className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md font-medium transition-colors ${
+                        activeSection === "auditoria" && auditoriaSubmodulo === key ? "text-[#38bdf8] font-bold bg-slate-800/70" : "text-slate-300 hover:text-white hover:bg-slate-800/50"
+                      }`}
+                    >
+                      <span>{label}</span>
+                      <ExternalLink size={11} className="opacity-60" />
+                    </button>
+                  )
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+      </aside>
 
-        <button
-          onClick={() => goToSection("detalles")}
-          className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
-            activeSection === "detalles"
-              ? "border-white text-white bg-white/10"
-              : "border-transparent text-white/85 hover:text-white hover:border-white/60"
-          }`}
-        >
-          <Eye size={14} />
-          Detalles de Validación
-        </button>
-
-        {/* Dropdown Solicitud de Parámetro */}
-        <div className="relative">
-          <button
-            onClick={() => {
-              setSolicitudOpen(!solicitudOpen);
-              setRegistroOpen(false);
-              setConsultaOpen(false);
-              setReportsOpen(false);
-              setDocumentsOpen(false);
-              setAuditoriaOpen(false);
-            }}
-            className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
-              activeSection === "solicitudParametro" || activeSection === "parametrosConfig"
-                ? "border-white text-white bg-white/10"
-                : "border-transparent text-white/85 hover:text-white hover:border-white/60"
-            }`}
-          >
-            <ClipboardList size={14} />
-            Solicitudes
-            <ChevronDown
-              size={12}
-              className={`transition-transform ${solicitudOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-          {solicitudOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-60">
-              <button
-                onClick={() => goToSection("solicitudParametro")}
-                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                  activeSection === "solicitudParametro"
-                    ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
-                    : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
-                }`}
-              >
-                Habilitación de Parámetro
-              </button>
-              <button
-                onClick={() => goToSection("solicitudUsuario")}
-                className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
-              >
-                Creación de Usuario
-              </button>
-              <button
-                onClick={() => goToSection("solicitudPassword")}
-                className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
-              >
-                Restablecimiento de contraseña
-              </button>
-              <button
-                onClick={() => goToSection("parametrosConfig")}
-                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                  activeSection === "parametrosConfig"
-                    ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
-                    : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
-                }`}
-              >
-                Parámetros
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Dropdown Reportes */}
-        <div className="relative">
-          <button
-            onClick={() => { setReportsOpen(!reportsOpen); setRegistroOpen(false); setConsultaOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); }}
-            className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
-              activeSection === "reportes"
-                ? "border-white text-white bg-white/10"
-                : "border-transparent text-white/85 hover:text-white hover:border-white/60"
-            }`}
-          >
-            <BarChart3 size={14} />
-            Reportes
-            <ChevronDown
-              size={12}
-              className={`transition-transform ${reportsOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-          {reportsOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-56">
-              <button
-                onClick={() => { setTab("reporteFirmas"); setActiveSection("reportes"); setReportsOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); setDocumentView(null); }}
-                className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
-              >
-                Reporte de Firmas de Directivos
-              </button>
-              <button
-                onClick={() => { setTab("reporteDetalles"); setActiveSection("reportes"); setReportsOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); setDocumentView(null); }}
-                className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
-              >
-                Reporte de Detalles de Validación
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Dropdown Documentos */}
-        <div className="relative">
-           <button
-            onClick={() => { setDocumentsOpen(!documentsOpen); setRegistroOpen(false); setConsultaOpen(false); setReportsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); }}
-            className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
-              activeSection === "documentos" || activeSection === "solicitudesManuales"
-                ? "border-white text-white bg-white/10"
-                : "border-transparent text-white/85 hover:text-white hover:border-white/60"
-            }`}
-          >
-            <FileText size={14} />
-            Documentos
-            <ChevronDown
-              size={12}
-              className={`transition-transform ${documentsOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-          {documentsOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-60">
-              <button
-                onClick={() => { setActiveSection("documentos"); setDocumentView("boletines"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); }}
-                className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
-              >
-                Boletines Tecnicos
-              </button>
-              <button
-                onClick={() => { setActiveSection("documentos"); setDocumentView("manuales"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); }}
-                className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors"
-              >
-                Manuales de Usuarios
-              </button>
-              <button
-                onClick={() => { goToSection("solicitudesManuales"); setDocumentsOpen(false); setReportsOpen(false); setSolicitudOpen(false); setAuditoriaOpen(false); }}
-                className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac] transition-colors border-t border-slate-100"
-              >
-                Solicitudes de manuales
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="relative">
-          <button
-            onClick={() => { setAuditoriaOpen(!auditoriaOpen); setRegistroOpen(false); setConsultaOpen(false); setReportsOpen(false); setDocumentsOpen(false); setSolicitudOpen(false); }}
-            className={`flex items-center gap-1.5 px-3.5 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap ${
-              activeSection === "auditoria"
-                ? "border-white text-white bg-white/10"
-                : "border-transparent text-white/85 hover:text-white hover:border-white/60"
-            }`}
-          >
-            <ShieldCheck size={14} />
-            Auditoría
-            <ChevronDown
-              size={12}
-              className={`transition-transform ${auditoriaOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-          {auditoriaOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 min-w-56">
-              {([
-                ["LOGS_SISTEMAS", "Logs Sistemas"],
-                ["LOGS_DESCARGAS", "Logs Descargas"],
-                ["LOGS_ACCESOS", "Logs Accesos"],
-              ] as const).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => {
-                    setAuditoriaSubmodulo(key);
-                    setActiveSection("auditoria");
-                    onSelectSection("auditoria");
-                    setAuditoriaOpen(false);
-                    setRegistroOpen(false);
-                    setConsultaOpen(false);
-                    setSolicitudOpen(false);
-                    setReportsOpen(false);
-                    setDocumentsOpen(false);
-                    setDocumentView(null);
-                  }}
-                  className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                    activeSection === "auditoria" && auditoriaSubmodulo === key
-                      ? "bg-[#0778ac]/10 text-[#0778ac] font-bold"
-                      : "text-slate-700 hover:bg-[#0778ac]/10 hover:text-[#0778ac]"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </nav>
-
-      <div className="flex-1 overflow-auto bg-[#f8f9fa] p-6">
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-auto p-6 bg-[#f8f9fa]">
         {activeSection === "registro" && (
-          <VersionRegistration versions={versions} setVersions={setVersions} onError={onError} />
+          <VersionRegistration versions={versions} setVersions={setVersions} onError={onError} loggedUser={loggedUser} />
         )}
         {activeSection === "restaurarDB" && (
           <RestaurarDBSection versions={versions} onError={onError} />
         )}
-        {(activeSection === "consulta" || activeSection === "consultaVersiones") && (
+        {activeSection === "consultaVersiones" && (
           <VersionQuery versions={versions} setVersions={setVersions} onError={onError} loggedUser={loggedUser} />
+        )}
+        {activeSection === "consultaRestauracionDB" && (
+          <ConsultarRestauracionDBSection versions={versions} onError={onError} />
         )}
         {activeSection === "versionParametros" && (
           <VersionCorreoParametrosSection onError={onError} />
@@ -2358,10 +2448,10 @@ function CoordinatorModule({
         {activeSection === "parametrosConfig" && (
           <><ParametrosConfigSection onError={onError} /><AccessPlatformsConfig onError={onError} /></>
         )}
-        {activeSection === "reportes" && tab === "reporteFirmas" && (
+        {activeSection === "reporteFirmas" && (
           <ReportFirmas versions={versions} observaciones={observaciones} />
         )}
-        {activeSection === "reportes" && tab === "reporteDetalles" && (
+        {activeSection === "reporteDetalles" && (
           <ReportDetalles versions={versions} observaciones={observaciones} />
         )}
         {activeSection === "auditoria" && (
@@ -2378,10 +2468,12 @@ function VersionRegistration({
   versions,
   setVersions,
   onError,
+  loggedUser = "coordinador_sistemas",
 }: {
   versions: Version[];
   setVersions: React.Dispatch<React.SetStateAction<Version[]>>;
   onError: (message: string) => void;
+  loggedUser?: string;
 }) {
   const containerOptions = getContainerOptions(versions);
   const [form, setForm] = useState({
@@ -2434,73 +2526,79 @@ function VersionRegistration({
   }
 
   return (
-    <div className="max-w-3xl">
-      <SectionHeader
-        title="Registro de Versión del Sistema"
-        subtitle="Complete los datos para registrar una nueva versión del sistema."
-      />
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-5">
-        <div className="grid gap-4 md:grid-cols-2">
-          <FormInput
-            label="Título (Versión del Sistema)"
-            required
-            placeholder="Ej: Versión 2.4.1"
-            value={form.titulo}
-            onChange={(e) => setForm({ ...form, titulo: e.target.value })}
-          />
-          <ContainerAutocompleteField
-            label="Contenedor de Base de Datos"
-            listId="version-registration-container-options"
-            value={form.contenedor_bd}
-            onChange={(value) => setForm({ ...form, contenedor_bd: value })}
-            options={containerOptions}
-          />
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <FormInput
-            label="Número de compilación"
-            placeholder="Ej: BUILD-2026-08-22"
-            value={form.num_compilacion}
-            onChange={(e) => setForm({ ...form, num_compilacion: e.target.value })}
-          />
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Fecha de compilación</label>
-            <input
-              type="datetime-local"
-              value={form.fecha_compilacion}
-              onChange={(e) => setForm({ ...form, fecha_compilacion: e.target.value })}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+    <div className="space-y-8">
+      <div className="max-w-3xl">
+        <SectionHeader
+          title="Registro de Versión del Sistema"
+          subtitle="Complete los datos para registrar una nueva versión del sistema."
+        />
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormInput
+              label="Título (Versión del Sistema)"
+              required
+              placeholder="Ej: Versión 2.4.1"
+              value={form.titulo}
+              onChange={(e) => setForm({ ...form, titulo: e.target.value })}
+            />
+            <ContainerAutocompleteField
+              label="Contenedor de Base de Datos"
+              listId="version-registration-container-options"
+              value={form.contenedor_bd}
+              onChange={(value) => setForm({ ...form, contenedor_bd: value })}
+              options={containerOptions}
             />
           </div>
-        </div>
 
-        <FormTextarea
-          label="Descripción (Detalles de mejoras en la actualización)"
-          required
-          rows={4}
-          placeholder="Describa los cambios principales..."
-          value={form.descripcion}
-          onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
-        />
-        <FormInput
-          label="Enlace (URL de la versión)"
-          required
-          type="url"
-          placeholder="http://..."
-          value={form.enlace}
-          onChange={(e) => setForm({ ...form, enlace: e.target.value })}
-        />
-        <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
-          <Btn v="primary" onClick={handleSave} disabled={saving}>
-            <Plus size={15} /> Guardar Versión
-          </Btn>
-          {saved && (
-            <span className="text-sm text-emerald-600 flex items-center gap-1.5 font-medium">
-              <CheckCircle size={15} /> Versión registrada exitosamente
-            </span>
-          )}
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormInput
+              label="Número de compilación"
+              placeholder="Ej: BUILD-2026-08-22"
+              value={form.num_compilacion}
+              onChange={(e) => setForm({ ...form, num_compilacion: e.target.value })}
+            />
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Fecha de compilación</label>
+              <input
+                type="datetime-local"
+                value={form.fecha_compilacion}
+                onChange={(e) => setForm({ ...form, fecha_compilacion: e.target.value })}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+              />
+            </div>
+          </div>
+
+          <FormTextarea
+            label="Descripción (Detalles de mejoras en la actualización)"
+            required
+            rows={4}
+            placeholder="Describa los cambios principales..."
+            value={form.descripcion}
+            onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
+          />
+          <FormInput
+            label="Enlace (URL de la versión)"
+            required
+            type="url"
+            placeholder="http://..."
+            value={form.enlace}
+            onChange={(e) => setForm({ ...form, enlace: e.target.value })}
+          />
+          <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
+            <Btn v="primary" onClick={handleSave} disabled={saving}>
+              <Plus size={15} /> Guardar Versión
+            </Btn>
+            {saved && (
+              <span className="text-sm text-emerald-600 flex items-center gap-1.5 font-medium">
+                <CheckCircle size={15} /> Versión registrada exitosamente
+              </span>
+            )}
+          </div>
         </div>
+      </div>
+
+      <div className="border-t border-slate-200 pt-6">
+        <VersionQuery versions={versions} setVersions={setVersions} onError={onError} loggedUser={loggedUser} />
       </div>
     </div>
   );
@@ -2534,6 +2632,19 @@ function RestaurarDBSection({
   useEffect(() => {
     fetchRestauraciones();
   }, []);
+
+  const handleDeleteRestauracion = (oid: number) => {
+    if (!window.confirm(`¿Está seguro de eliminar el registro de restauración #${oid}?`)) {
+      return;
+    }
+    api(`/versions/restauraciones/${oid}`, { method: "DELETE" })
+      .then(() => {
+        toast.success(`Restauración #${oid} eliminada exitosamente.`);
+        fetchRestauraciones();
+      })
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Error al eliminar la restauración"));
+  };
+
   const restauracionPagination = useTablePagination(restauraciones);
 
   const handleSave = () => {
@@ -2639,14 +2750,15 @@ function RestaurarDBSection({
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-200 sticky top-0 bg-white z-20">
+        <div className="p-4 border-b border-slate-200 sticky top-0 bg-white z-20 flex justify-between items-center">
           <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Historial de Restauraciones de BD</h4>
+          <span className="text-xs text-slate-500 font-medium">Total: {restauraciones.length} registros</span>
         </div>
         <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
         <table className="w-full min-w-[980px] text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-12 z-10">
             <tr>
-              {["ID", "Contenedor BD", "Fecha Restauración", "Fecha Última Copia BD", "Compilación Anclada", "Usuario"].map((h) => (
+              {["ID", "Contenedor BD", "Fecha Restauración", "Fecha Última Copia BD", "Compilación Anclada", "Usuario", "Acciones"].map((h) => (
                 <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">{h}</th>
               ))}
             </tr>
@@ -2660,6 +2772,104 @@ function RestaurarDBSection({
                 <td className="px-4 py-3 text-slate-700 font-mono text-xs whitespace-nowrap">{r.fecha_ultima_copia?.slice(0, 16).replace("T", " ")}</td>
                 <td className="px-4 py-3 text-slate-900 font-medium min-w-[240px]">{r.compilacion_titulo || "—"}</td>
                 <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap min-w-[120px]">{r.usuario || "—"}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <Btn v="danger" sm onClick={() => handleDeleteRestauracion(r.oid)}>
+                    <Trash2 size={13} /> Eliminar
+                  </Btn>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+        <TablePaginationControls pagination={restauracionPagination} itemLabel="restauraciones" />
+        {!loading && restauraciones.length === 0 && <EmptyState message="No hay registros de restauración de base de datos." />}
+      </div>
+    </div>
+  );
+}
+
+// ─── 1b. Consultar Restauración DB Section ─────────────────────────────────────
+
+function ConsultarRestauracionDBSection({
+  versions,
+  onError,
+}: {
+  versions: Version[];
+  onError: (message: string) => void;
+}) {
+  const [restauraciones, setRestauraciones] = useState<RestauracionDB[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const fetchRestauraciones = () => {
+    setLoading(true);
+    api<RestauracionDB[]>(`/versions/restauraciones?_ts=${Date.now()}`, { cache: "no-store" })
+      .then(setRestauraciones)
+      .catch((e) => setErrorMsg(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchRestauraciones();
+  }, []);
+
+  const handleDeleteRestauracion = (oid: number) => {
+    if (!window.confirm(`¿Está seguro de eliminar el registro de restauración #${oid}?`)) {
+      return;
+    }
+    api(`/versions/restauraciones/${oid}`, { method: "DELETE" })
+      .then(() => {
+        toast.success(`Restauración #${oid} eliminada exitosamente.`);
+        fetchRestauraciones();
+      })
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Error al eliminar la restauración"));
+  };
+
+  const restauracionPagination = useTablePagination(restauraciones);
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader
+        title="Consultar Restauración Base Datos"
+        subtitle="Listado y consulta de los registros de restauración de base de datos anclados a compilaciones."
+      />
+
+      {errorMsg && (
+        <div className="flex items-center gap-2 p-4 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 text-sm">
+          <AlertCircle size={18} className="text-amber-600 shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-200 sticky top-0 bg-white z-20 flex justify-between items-center">
+          <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Historial de Restauraciones de BD</h4>
+          <span className="text-xs text-slate-500 font-medium">Total: {restauraciones.length} registros</span>
+        </div>
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+        <table className="w-full min-w-[980px] text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+            <tr>
+              {["ID", "Contenedor BD", "Fecha Restauración", "Fecha Última Copia BD", "Compilación Anclada", "Usuario", "Acciones"].map((h) => (
+                <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {restauracionPagination.rows.map((r) => (
+              <tr key={r.oid} className="hover:bg-slate-50/80 transition-colors">
+                <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">#{r.oid}</td>
+                <td className="px-4 py-3 font-bold text-[#0778ac] whitespace-nowrap">{r.contenedor_bd}</td>
+                <td className="px-4 py-3 text-slate-700 font-mono text-xs whitespace-nowrap">{r.fecha_hora_restauracion?.slice(0, 16).replace("T", " ")}</td>
+                <td className="px-4 py-3 text-slate-700 font-mono text-xs whitespace-nowrap">{r.fecha_ultima_copia?.slice(0, 16).replace("T", " ")}</td>
+                <td className="px-4 py-3 text-slate-900 font-medium min-w-[240px]">{r.compilacion_titulo || "—"}</td>
+                <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap min-w-[120px]">{r.usuario || "—"}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <Btn v="danger" sm onClick={() => handleDeleteRestauracion(r.oid)}>
+                    <Trash2 size={13} /> Eliminar
+                  </Btn>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -2717,6 +2927,28 @@ function VersionQuery({
 
   const isCoordinator = loggedUser !== "practicante";
 
+  const produccionVersion = versions.find((v) => v.es_produccion) || versions.find((v) => v.titulo.includes("21 AGOSTO 2026"));
+  const produccionTitle = produccionVersion ? produccionVersion.titulo : "VERSION DEL 21 AGOSTO 2026 NET Y WEB - 81709";
+
+  async function handleSetProduccion(version: Version) {
+    try {
+      const updated = await api<ApiVersion>(`/versions/${version.id.slice(1)}/set-produccion`, {
+        method: "PUT",
+      });
+      setVersions((prev) =>
+        sortVersionsByCompilationDateDesc(
+          prev.map((v) => ({
+            ...v,
+            es_produccion: v.id === version.id,
+          }))
+        )
+      );
+      toast.success(`Versión "${version.titulo}" establecida como Producción.`);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "No fue posible cambiar la versión en producción.");
+    }
+  }
+
   function openEdit(v: Version) {
     setEditForm({
       titulo: v.tituloBase,
@@ -2762,11 +2994,11 @@ function VersionQuery({
         method: "PUT",
         body: JSON.stringify({ estado: version.estado !== "activo" }),
       });
-    setVersions((prev) =>
-      sortVersionsByCompilationDateDesc(prev.map((v) => (v.id === version.id ? toVersion(updated) : v)))
-    );
+      setVersions((prev) =>
+        sortVersionsByCompilationDateDesc(prev.map((v) => (v.id === version.id ? toVersion(updated) : v)))
+      );
     } catch (error) {
-    onError(error instanceof Error ? error.message : "No fue posible cambiar el estado.");
+      onError(error instanceof Error ? error.message : "No fue posible cambiar el estado.");
     }
   }
 
@@ -2776,6 +3008,20 @@ function VersionQuery({
         title="Consulta de Versiones del Sistema"
         subtitle={`${filteredVersions.length} de ${versions.length} versión(es) encontradas`}
       />
+
+      {/* Banner Informativo Versión en Producción (Req 5) */}
+      <div className="mb-4 bg-emerald-50 border border-emerald-300 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="flex h-3 w-3 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <span className="text-xs sm:text-sm font-bold text-emerald-950">
+            {produccionTitle} se encuentra en producción
+          </span>
+        </div>
+        <span className="bg-emerald-600 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
+          En Producción
+        </span>
+      </div>
+
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
         <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
         <table className="w-full text-sm">
@@ -2840,60 +3086,81 @@ function VersionQuery({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {versionPagination.rows.map((v) => (
-              <tr key={v.id} className="hover:bg-slate-50/80 transition-colors">
-                <td className="px-4 py-3 font-medium text-slate-900 max-w-xs">{v.titulo}</td>
-                {isCoordinator && (
-                  <td className="px-4 py-3 font-bold text-[#0778ac] text-xs">{v.contenedor_bd || "—"}</td>
-                )}
-                <td className="px-4 py-3 text-slate-700 text-xs font-mono">{v.num_compilacion || "—"}</td>
-                <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fecha_compilacion || "—"}</td>
-                <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fechaRegistro}</td>
-                <td className="px-4 py-3">
-                  <StatusBadge estado={v.estado} />
-                </td>
-                <td className="px-4 py-3">
-                  {v.estado === "activo" ? (
-                    <a
-                      href={v.enlace}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[#0778ac] hover:text-[#055f82] text-xs font-medium"
-                    >
-                      <ExternalLink size={11} /> Ver enlace
-                    </a>
-                  ) : (
-                    <span className="text-slate-400 text-xs flex items-center gap-1">
-                      <XCircle size={11} /> Bloqueado
-                    </span>
+            {versionPagination.rows.map((v) => {
+              const isInactive = v.estado === "inactivo";
+              return (
+                <tr key={v.id} className="hover:bg-slate-50/80 transition-colors">
+                  <td className="px-4 py-3 font-medium text-slate-900 max-w-xs">{v.titulo}</td>
+                  {isCoordinator && (
+                    <td className="px-4 py-3 font-bold text-[#0778ac] text-xs">{v.contenedor_bd || "—"}</td>
                   )}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-1 flex-wrap">
-                    <Btn v="ghost" sm onClick={() => setDetailsModal(v)}>
-                      <Eye size={13} /> Consultar
-                    </Btn>
-                    <Btn v="ghost" sm onClick={() => openEdit(v)}>
-                      <Pencil size={13} /> Editar
-                    </Btn>
-                    <Btn
-                      v={v.estado === "activo" ? "warning" : "success"}
-                      sm
-                      onClick={() => toggleEstado(v)}
-                    >
-                      <Power size={13} />
-                      {v.estado === "activo" ? "Inactivar" : "Activar"}
-                    </Btn>
-                    <button
-                      onClick={() => { setCorreoModal(v); setCorreoTipo("pruebas"); setCorreoMejoras(""); setCorreoFechaDespliegue(""); }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#0778ac] hover:bg-[#066591] text-white transition-colors shadow-sm"
-                    >
-                      <Mail size={13} /> Enviar correo
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  <td className="px-4 py-3 text-slate-700 text-xs font-mono">{v.num_compilacion || "—"}</td>
+                  <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fecha_compilacion || "—"}</td>
+                  <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fechaRegistro}</td>
+                  <td className="px-4 py-3">
+                    <StatusBadge estado={v.estado} />
+                  </td>
+                  <td className="px-4 py-3">
+                    {v.estado === "activo" ? (
+                      <a
+                        href={v.enlace}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[#0778ac] hover:text-[#055f82] text-xs font-medium"
+                      >
+                        <ExternalLink size={11} /> Ver enlace
+                      </a>
+                    ) : (
+                      <span className="text-slate-400 text-xs flex items-center gap-1">
+                        <XCircle size={11} /> Bloqueado
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {/* Consultar - Siempre activo (Req 5) */}
+                      <Btn v="ghost" sm onClick={() => setDetailsModal(v)}>
+                        <Eye size={13} /> Consultar
+                      </Btn>
+                      {/* Editar - Inactivado cuando estado === inactivo (Req 5) */}
+                      <Btn v="ghost" sm onClick={() => openEdit(v)} disabled={isInactive}>
+                        <Pencil size={13} /> Editar
+                      </Btn>
+                      {/* Activar/Inactivar - Siempre activo (Req 5) */}
+                      <Btn
+                        v={v.estado === "activo" ? "warning" : "success"}
+                        sm
+                        onClick={() => toggleEstado(v)}
+                      >
+                        <Power size={13} />
+                        {v.estado === "activo" ? "Inactivar" : "Activar"}
+                      </Btn>
+                      {/* Enviar correo - Inactivado cuando estado === inactivo (Req 5) */}
+                      <button
+                        onClick={() => { setCorreoModal(v); setCorreoTipo("pruebas"); setCorreoMejoras(""); setCorreoFechaDespliegue(""); }}
+                        disabled={isInactive}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#0778ac] hover:bg-[#066591] text-white transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Mail size={13} /> Enviar correo
+                      </button>
+                      {/* Botón Producción - Inactivado cuando estado === inactivo (Req 5) */}
+                      <button
+                        onClick={() => handleSetProduccion(v)}
+                        disabled={isInactive}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors shadow-sm ${
+                          v.es_produccion
+                            ? "bg-emerald-600 text-white font-bold cursor-default"
+                            : "bg-slate-700 hover:bg-slate-800 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                        }`}
+                      >
+                        <CheckCircle size={13} />
+                        {v.es_produccion ? "En Producción" : "Producción"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         </div>

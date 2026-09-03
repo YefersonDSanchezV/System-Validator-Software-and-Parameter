@@ -564,73 +564,75 @@ export function PasswordResetRequests({ onError, admin = false }: { onError: (me
         </div>
       </div>
 
-      {/* Gráfico Donut y Tabla por Área */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
-        <div className="lg:col-span-6 flex flex-col justify-center items-center border-b lg:border-b-0 lg:border-r border-slate-100 pb-6 lg:pb-0 lg:pr-6">
-          <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4 text-center">
-            Distribución por Área Solicitante
-          </h3>
-          {areaData.length > 0 ? (
-            <div className="w-full h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={areaData}
-                    dataKey="count"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={90}
-                    paddingAngle={4}
-                  >
-                    {areaData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => [`${value} solicitudes`, "Cantidad"]} />
-                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-400 my-auto">Sin datos de áreas aún.</p>
-          )}
-        </div>
+      {/* Gráfico Donut y Tabla por Área (Solo visible en Coordinador de Sistemas) */}
+      {admin && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+          <div className="lg:col-span-6 flex flex-col justify-center items-center border-b lg:border-b-0 lg:border-r border-slate-100 pb-6 lg:pb-0 lg:pr-6">
+            <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4 text-center">
+              Distribución por Área Solicitante
+            </h3>
+            {areaData.length > 0 ? (
+              <div className="w-full h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={areaData}
+                      dataKey="count"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={90}
+                      paddingAngle={4}
+                    >
+                      {areaData.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value: number) => [`${value} solicitudes`, "Cantidad"]} />
+                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 my-auto">Sin datos de áreas aún.</p>
+            )}
+          </div>
 
-        <div className="lg:col-span-6 flex flex-col">
-          <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4">
-            Áreas que más solicitan (Mayor a Menor)
-          </h3>
-          <div className="overflow-y-auto max-h-64 rounded-2xl border border-slate-100">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 border-b border-slate-100 text-xs">
-                <tr>
-                  <th className="px-4 py-2 text-left font-semibold">#</th>
-                  <th className="px-4 py-2 text-left font-semibold">Área</th>
-                  <th className="px-4 py-2 text-right font-semibold">Solicitudes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {areaData.map((row, idx) => (
-                  <tr key={row.name} className="hover:bg-slate-50/50">
-                    <td className="px-4 py-2.5 font-semibold text-slate-400 text-xs">{idx + 1}</td>
-                    <td className="px-4 py-2.5 font-medium text-slate-800">{row.name}</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-[#0778ac]">{row.count}</td>
-                  </tr>
-                ))}
-                {areaData.length === 0 && (
+          <div className="lg:col-span-6 flex flex-col">
+            <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4">
+              Áreas que más solicitan (Mayor a Menor)
+            </h3>
+            <div className="overflow-y-auto max-h-64 rounded-2xl border border-slate-100">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500 border-b border-slate-100 text-xs">
                   <tr>
-                    <td colSpan={3} className="px-4 py-4 text-center text-xs text-slate-400">
-                      No hay áreas registradas.
-                    </td>
+                    <th className="px-4 py-2 text-left font-semibold">#</th>
+                    <th className="px-4 py-2 text-left font-semibold">Área</th>
+                    <th className="px-4 py-2 text-right font-semibold">Solicitudes</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {areaData.map((row, idx) => (
+                    <tr key={row.name} className="hover:bg-slate-50/50">
+                      <td className="px-4 py-2.5 font-semibold text-slate-400 text-xs">{idx + 1}</td>
+                      <td className="px-4 py-2.5 font-medium text-slate-800">{row.name}</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-[#0778ac]">{row.count}</td>
+                    </tr>
+                  ))}
+                  {areaData.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="px-4 py-4 text-center text-xs text-slate-400">
+                        No hay áreas registradas.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <RequestTable
         headings={[...["Consecutivo", "Plataforma", "Solicitante", "Área", "Usuario", "Fecha", "Estado"], ...(admin ? ["Acciones"] : [])]}

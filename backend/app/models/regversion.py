@@ -18,6 +18,7 @@ class RegVersion(Base):
     contenedor_bd = Column(String(50), nullable=True) # DGEMPRES99, DGEMPRES98, DGEMPRES10
     num_compilacion = Column(String(100), nullable=True)
     fecha_compilacion = Column(TIMESTAMP, nullable=True)
+    es_produccion = Column(Boolean, default=False)
 
     validaciones = relationship(
         "RegValidacion",

@@ -98,6 +98,27 @@ def crear_restauracion(data: RestauracionDBCreate, db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail="No fue posible registrar la restauración de BD") from exc
 
 
+@router.delete("/restauraciones/{oid}", status_code=200)
+def eliminar_restauracion(oid: int, db: Session = Depends(get_db)):
+    try:
+        service.eliminar_restauracion(db, oid)
+        return {"message": "Restauración eliminada con éxito"}
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="No fue posible eliminar la restauración de BD") from exc
+
+
+@router.put("/{oid}/set-produccion", response_model=VersionResponse)
+def set_produccion(oid: int, db: Session = Depends(get_db)):
+    try:
+        return service.set_produccion(db, oid)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="No fue posible marcar la versión como producción") from exc
+
+
 @router.get("/{oid}", response_model=VersionResponse)
 def obtener(oid: int, db: Session = Depends(get_db)):
     try:

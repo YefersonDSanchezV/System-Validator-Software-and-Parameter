@@ -12,6 +12,7 @@ export interface Version {
   contenedor_bd?: string | null;
   num_compilacion?: string | null;
   fecha_compilacion?: string | null;
+  es_produccion?: boolean;
 }
 
 export interface ApiVersion {
@@ -24,6 +25,7 @@ export interface ApiVersion {
   contenedor_bd?: string | null;
   num_compilacion?: string | null;
   fecha_compilacion?: string | null;
+  es_produccion?: boolean;
 }
 
 export const toVersion = (v: ApiVersion): Version => {
@@ -42,6 +44,7 @@ export const toVersion = (v: ApiVersion): Version => {
     contenedor_bd: v.contenedor_bd || null,
     num_compilacion: v.num_compilacion || null,
     fecha_compilacion: v.fecha_compilacion ? v.fecha_compilacion.slice(0, 16).replace("T", " ") : null,
+    es_produccion: Boolean(v.es_produccion),
   };
 };
 

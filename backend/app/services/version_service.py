@@ -26,7 +26,12 @@ class VersionService:
         self.observacion_service = ObservacionService()
 
     def listar(self, db: Session):
-        return self.repository.get_all(db)
+        versions = self.repository.get_all(db)
+        if versions and not any(getattr(v, "es_produccion", False) for v in versions):
+            target = next((v for v in versions if "21 AGOSTO 2026" in v.titulo.upper()), versions[0])
+            target.es_produccion = True
+            db.commit()
+        return versions
 
     def obtener(self, db: Session, oid: int):
         version = self.repository.get_by_id(db, oid)
@@ -45,6 +50,7 @@ class VersionService:
             contenedor_bd=data.contenedor_bd,
             num_compilacion=data.num_compilacion,
             fecha_compilacion=data.fecha_compilacion,
+            es_produccion=data.es_produccion or False,
         )
         return self.repository.create(db, nueva)
 
@@ -57,6 +63,14 @@ class VersionService:
 
         self.repository.update(db)
         return version
+
+    def set_produccion(self, db: Session, oid: int):
+        target = self.obtener(db, oid)
+        db.query(RegVersion).update({RegVersion.es_produccion: False})
+        target.es_produccion = True
+        db.commit()
+        db.refresh(target)
+        return target
 
     def eliminar(self, db: Session, oid: int):
         version = self.obtener(db, oid)
@@ -82,6 +96,14 @@ class VersionService:
         db.commit()
         db.refresh(restauracion)
         return restauracion
+
+    def eliminar_restauracion(self, db: Session, oid: int):
+        restauracion = db.query(RestauracionDB).filter(RestauracionDB.oid == oid).first()
+        if not restauracion:
+            raise ValueError(f"Restauración #{oid} no encontrada")
+        db.delete(restauracion)
+        db.commit()
+        return True
 
     def listar_restauraciones(self, db: Session):
         return db.query(RestauracionDB).order_by(RestauracionDB.fecha_hora_restauracion.desc()).all()

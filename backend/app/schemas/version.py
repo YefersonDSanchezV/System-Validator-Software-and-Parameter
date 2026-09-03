@@ -10,6 +10,7 @@ class VersionBase(BaseModel):
     contenedor_bd: Optional[str] = Field(default=None, max_length=50) # DGEMPRES99, DGEMPRES98, DGEMPRES10
     num_compilacion: Optional[str] = Field(default=None, max_length=100)
     fecha_compilacion: Optional[datetime] = None
+    es_produccion: Optional[bool] = False
 
 
 class VersionCreate(VersionBase):
@@ -24,6 +25,7 @@ class VersionUpdate(BaseModel):
     contenedor_bd: Optional[str] = None
     num_compilacion: Optional[str] = None
     fecha_compilacion: Optional[datetime] = None
+    es_produccion: Optional[bool] = None
 
 
 class VersionResponse(VersionBase):
@@ -31,6 +33,7 @@ class VersionResponse(VersionBase):
     estado: bool
     fecha_registro: Optional[datetime] = None
     usuario: str
+    es_produccion: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
