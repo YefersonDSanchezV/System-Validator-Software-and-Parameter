@@ -62,3 +62,12 @@ class LogCorreoVersion(Base):
     fecha_despliegue = Column(TIMESTAMP, nullable=True)
     fecha_envio = Column(TIMESTAMP, nullable=False)
     usuario = Column(String(100), nullable=True)
+
+
+class PermisoUsuarioCoordinador(Base):
+    __tablename__ = "permisos_usuario_coordinador"
+
+    id = Column(Integer, primary_key=True, index=True)
+    usuario = Column(String(50), unique=True, nullable=False)
+    permisos = Column(Text, nullable=False)
+    updated_at = Column(TIMESTAMP, nullable=True)

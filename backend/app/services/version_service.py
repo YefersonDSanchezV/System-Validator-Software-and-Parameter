@@ -1,9 +1,13 @@
+import json
 from datetime import datetime
 import logging
 from zoneinfo import ZoneInfo
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.models.regversion import RegVersion, RestauracionDB, ConfiguracionVersionCorreos, LogCorreoVersion
+from app.models.regversion import (
+    RegVersion, RestauracionDB, ConfiguracionVersionCorreos, LogCorreoVersion, PermisoUsuarioCoordinador
+)
 from app.repositories.version_repositories import VersionRepository
 from app.schemas.version import (
     VersionCreate,
@@ -18,11 +22,16 @@ from app.utils.pdf_generator import generate_firmas_report_pdf
 
 logger = logging.getLogger(__name__)
 
+ALL_COORDINATOR_SECTIONS = [
+    "registro", "restaurarDB", "consultaVersiones", "consultaRestauracionDB", "versionParametros",
+    "detalles", "solicitudParametro", "solicitudUsuario", "solicitudPassword", "parametrosConfig",
+    "reporteFirmas", "reporteDetalles", "documentos_boletines", "documentos_manuales",
+    "solicitudesManuales", "auditoria", "permisos"
+]
 
 class VersionService:
-
-    def __init__(self):
-        self.repository = VersionRepository()
+    def __init__(self, repository: VersionRepository | None = None):
+        self.repository = repository or VersionRepository()
         self.observacion_service = ObservacionService()
 
     def listar(self, db: Session):
@@ -84,9 +93,16 @@ class VersionService:
             if comp:
                 comp_titulo = f"{comp.titulo} - {comp.num_compilacion}" if comp.num_compilacion else comp.titulo
 
+        now_bogota = datetime.now(ZoneInfo("America/Bogota")).replace(tzinfo=None)
+
+        # Calculate next contiguous ID
+        max_oid = db.query(RestauracionDB.oid).order_by(RestauracionDB.oid.desc()).first()
+        next_oid = (max_oid[0] + 1) if max_oid and max_oid[0] is not None else 1
+
         restauracion = RestauracionDB(
+            oid=next_oid,
             contenedor_bd=data.contenedor_bd,
-            fecha_hora_restauracion=datetime.now(),
+            fecha_hora_restauracion=now_bogota,
             fecha_ultima_copia=data.fecha_ultima_copia,
             compilacion_anclada_oid=data.compilacion_anclada_oid,
             compilacion_titulo=comp_titulo,
@@ -95,6 +111,14 @@ class VersionService:
         db.add(restauracion)
         db.commit()
         db.refresh(restauracion)
+
+        # Synchronize PostgreSQL sequence
+        try:
+            db.execute(text("SELECT setval(pg_get_serial_sequence('restauraciones_db', 'oid'), (SELECT COALESCE(MAX(oid), 1) FROM restauraciones_db), true)"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
         return restauracion
 
     def eliminar_restauracion(self, db: Session, oid: int):
@@ -103,10 +127,53 @@ class VersionService:
             raise ValueError(f"Restauración #{oid} no encontrada")
         db.delete(restauracion)
         db.commit()
+
+        # Reset sequence in PostgreSQL so next INSERT starts at max(oid)
+        try:
+            count = db.query(RestauracionDB).count()
+            if count == 0:
+                db.execute(text("SELECT setval(pg_get_serial_sequence('restauraciones_db', 'oid'), 1, false)"))
+            else:
+                db.execute(text("SELECT setval(pg_get_serial_sequence('restauraciones_db', 'oid'), (SELECT MAX(oid) FROM restauraciones_db), true)"))
+            db.commit()
+        except Exception as exc:
+            logger.warning("No se pudo reajustar secuencia de restauraciones_db: %s", exc)
+            db.rollback()
+
         return True
 
     def listar_restauraciones(self, db: Session):
         return db.query(RestauracionDB).order_by(RestauracionDB.fecha_hora_restauracion.desc()).all()
+
+    # --- Permisos Coordinador helpers ---
+    def obtener_todos_permisos(self, db: Session):
+        usuarios_validos = ["sistemas", "ingeniero", "practicante"]
+        resultado = []
+        for u in usuarios_validos:
+            p = db.query(PermisoUsuarioCoordinador).filter(PermisoUsuarioCoordinador.usuario == u).first()
+            if p and p.permisos:
+                try:
+                    secciones = json.loads(p.permisos)
+                except Exception:
+                    secciones = ALL_COORDINATOR_SECTIONS
+            else:
+                secciones = ALL_COORDINATOR_SECTIONS
+            resultado.append({"usuario": u, "permisos": secciones})
+        return resultado
+
+    def guardar_permisos(self, db: Session, usuario: str, permisos: list[str]):
+        u_clean = usuario.strip().lower()
+        p = db.query(PermisoUsuarioCoordinador).filter(PermisoUsuarioCoordinador.usuario == u_clean).first()
+        perm_json = json.dumps(permisos)
+        now_bogota = datetime.now(ZoneInfo("America/Bogota")).replace(tzinfo=None)
+        if not p:
+            p = PermisoUsuarioCoordinador(usuario=u_clean, permisos=perm_json, updated_at=now_bogota)
+            db.add(p)
+        else:
+            p.permisos = perm_json
+            p.updated_at = now_bogota
+        db.commit()
+        return {"usuario": u_clean, "permisos": permisos}
 
     # --- Correo version helpers ---
     @staticmethod
@@ -202,6 +269,7 @@ class VersionService:
                 </div>
                 <div style="padding: 20px;">
                     <p style="font-size: 16px; font-weight: bold; margin-top: 0; color: #2c3e50;">Asunto: {titulo_comp}</p>
+                    <p style="font-size: 13px; color: #555; font-style: italic;">Luego de 7 días de pruebas satisfactorias, la versión se declara estable y se procede con su despliegue en producción.</p>
                     
                     <table style="{estilo_tabla}">
                         <tr>

@@ -46,7 +46,7 @@ def next_id(db: Session, model, prefix: str) -> str:
     base = f"{prefix}-{datetime.now():%Y%m}-"
     last = (
         db.query(model.consecutivo)
-        .filter(model.consecutivo.like(f"{base}%"))
+        .filter(model.consecutivo.isnot(None), model.consecutivo != "")
         .order_by(model.oid.desc())
         .first()
     )

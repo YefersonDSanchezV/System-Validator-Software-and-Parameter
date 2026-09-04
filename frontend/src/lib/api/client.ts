@@ -80,7 +80,15 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
   if (!response.ok) {
     const data = await response.json().catch(() => null);
-    throw new Error(data?.detail ?? "No fue posible completar la operación.");
+    let errorMsg = "No fue posible completar la operación.";
+    if (typeof data?.detail === "string") {
+      errorMsg = data.detail;
+    } else if (Array.isArray(data?.detail) && data.detail.length > 0) {
+      errorMsg = data.detail.map((err: any) => err.msg || JSON.stringify(err)).join(", ");
+    } else if (data?.detail) {
+      errorMsg = JSON.stringify(data.detail);
+    }
+    throw new Error(errorMsg);
   }
   return response.json() as Promise<T>;
 }

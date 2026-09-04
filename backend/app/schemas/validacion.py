@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 class ObservacionCreate(BaseModel):
     version_id: int
-    modulo: str = Field(..., max_length=27)
+    modulo: str
     nombre: str = Field(..., max_length=500)
     cargo: str = Field(..., max_length=200)
     estado: str  # "aprobacion" | "rechazo"

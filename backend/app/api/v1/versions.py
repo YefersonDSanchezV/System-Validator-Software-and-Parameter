@@ -13,6 +13,7 @@ from app.schemas.version import (
     EnviarCorreoVersionRequest,
     ConfiguracionVersionCorreosDTO,
     LogCorreoVersionResponse,
+    PermisosUsuarioRequest,
 )
 from app.services.version_service import VersionService
 from app.utils.pdf_generator import generate_firmas_report_pdf, generate_detalles_report_pdf
@@ -96,6 +97,23 @@ def crear_restauracion(data: RestauracionDBCreate, db: Session = Depends(get_db)
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="No fue posible registrar la restauración de BD") from exc
+
+
+@router.get("/permisos")
+def obtener_permisos(db: Session = Depends(get_db)):
+    try:
+        return service.obtener_todos_permisos(db)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="No fue posible obtener la lista de permisos") from exc
+
+
+@router.put("/permisos")
+def guardar_permisos(data: PermisosUsuarioRequest, db: Session = Depends(get_db)):
+    try:
+        return service.guardar_permisos(db, data.usuario, data.permisos)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="No fue posible guardar los permisos") from exc
 
 
 @router.delete("/restauraciones/{oid}", status_code=200)

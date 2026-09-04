@@ -126,10 +126,9 @@ class SolicitudParametroService:
 
     def _generar_consecutivo(self, db: Session, now: datetime) -> str:
         prefix = f"{now.year}-{now.month:02d}"
-        pattern = f"{prefix}-%"
         last = (
             db.query(SolicitudParametro)
-            .filter(SolicitudParametro.consecutivo.like(pattern))
+            .filter(SolicitudParametro.consecutivo.isnot(None), SolicitudParametro.consecutivo != "")
             .order_by(SolicitudParametro.oid.desc())
             .first()
         )

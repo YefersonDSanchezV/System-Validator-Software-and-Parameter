@@ -54,7 +54,14 @@ class RestauracionDBResponse(BaseModel):
     compilacion_titulo: Optional[str] = None
     usuario: Optional[str] = None
 
-    model_config = ConfigDict(from_attributes=True)
+class PermisosUsuarioRequest(BaseModel):
+    usuario: str
+    permisos: list[str]
+
+
+class PermisosUsuarioResponse(BaseModel):
+    usuario: str
+    permisos: list[str]
 
 
 class ReporteFirmaFila(BaseModel):
