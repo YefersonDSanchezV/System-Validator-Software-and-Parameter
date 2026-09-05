@@ -57,10 +57,22 @@ def estado_parametros(db: Session = Depends(get_db)):
         enf_crenf_target = conf.enf_hcrenf_default if conf else 48
         enf_aplmed_target = conf.enf_haplmed_default if conf else 48
 
-        parametros = get_parametros_clinicos()
-        hc_val = parametros["historia_clinica"]
-        enf_hcrenf = parametros["enfermeria_hcrenf"]
-        enf_haplmed = parametros["enfermeria_haplmed"]
+        try:
+            parametros = get_parametros_clinicos()
+            hc_val = parametros["historia_clinica"]
+            enf_hcrenf = parametros["enfermeria_hcrenf"]
+            enf_haplmed = parametros["enfermeria_haplmed"]
+        except Exception as sql_e:
+            logger.warning(f"SQL Server no disponible, retornando valores por defecto: {sql_e}")
+            # Fallback: asumir parametros en valor por defecto (cerrados) para no bloquear UI
+            # El frontend podra mostrar advertencia si es necesario
+            return {
+                "historia_clinica_abierto": False,
+                "historia_clinica_valor": hc_target,
+                "enfermeria_abierto": False,
+                "enfermeria_hcrenf": enf_crenf_target,
+                "enfermeria_haplmed": enf_aplmed_target
+            }
 
         return {
             "historia_clinica_abierto": hc_val != hc_target,
@@ -69,8 +81,10 @@ def estado_parametros(db: Session = Depends(get_db)):
             "enfermeria_hcrenf": enf_hcrenf,
             "enfermeria_haplmed": enf_haplmed
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error consultando parametros: {e}")
+        logger.error(f"Error consultando parametros: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error consultando la base de datos de parametros")
 
 @router.get("/config", response_model=ConfiguracionParametrosDTO)

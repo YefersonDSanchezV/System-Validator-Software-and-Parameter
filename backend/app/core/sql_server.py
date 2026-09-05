@@ -4,7 +4,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def get_sql_server_connection():
+def get_sql_server_connection(timeout: int = 5):
     try:
         conn_str = (
             f"DRIVER={{{settings.DB_DRIVER}}};"
@@ -13,8 +13,9 @@ def get_sql_server_connection():
             f"UID={settings.DB_USER_SQL};"
             f"PWD={settings.DB_PASSWORD_SQL};"
             f"TrustServerCertificate={settings.DB_TRUST_CERTIFICATE};"
+            f"Connection Timeout={timeout};"
         )
-        return pyodbc.connect(conn_str)
+        return pyodbc.connect(conn_str, timeout=timeout)
     except Exception as e:
         logger.error(f"Error conectando a SQL Server: {e}")
         raise

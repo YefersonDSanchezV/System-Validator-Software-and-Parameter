@@ -1692,6 +1692,300 @@ function ParametrosConfigSection({
   );
 }
 
+// ─── Valores Parametros Section (Nuevo: Valores por defecto + Restablecimiento + Tipos) ──
+function ValoresParametrosSection({ onError }: { onError: (msg: string) => void }) {
+  const [config, setConfig] = useState<ConfiguracionParametrosDTO>({
+    hc_default: 30, enf_hcrenf_default: 48, enf_haplmed_default: 48,
+    hora_restablecimiento: "20:05", auto_restablecer: true,
+    tipos_habilitados: ["Historia Clinica", "Enfermeria", "Otros"],
+    correos_historia_clinica: "", correos_enfermeria: "", correos_otros: "",
+  });
+  const [loading, setLoading] = useState(true);
+  const [savingDefaults, setSavingDefaults] = useState(false);
+  const [savingHora, setSavingHora] = useState(false);
+  const [savingTipos, setSavingTipos] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const fetchConfig = () => {
+    api<ConfiguracionParametrosDTO>("/parametros-clinicos/config").then((data)=>setConfig(data)).catch((err)=>onError(err instanceof Error?err.message:"Error cargando configuración")).finally(()=>setLoading(false));
+  };
+  useEffect(()=>{ fetchConfig(); }, []);
+  const handleSaveDefaults = () => { setSavingDefaults(true); api<ConfiguracionParametrosDTO>("/parametros-clinicos/config",{method:"PUT",body:JSON.stringify(config)}).then((data)=>{setConfig(data); toast.success("Valores por defecto guardados.");}).catch((e)=>onError(e instanceof Error?e.message:"Error")).finally(()=>setSavingDefaults(false)); };
+  const handleSaveHora = () => { setSavingHora(true); api<ConfiguracionParametrosDTO>("/parametros-clinicos/config",{method:"PUT",body:JSON.stringify(config)}).then((data)=>{setConfig(data); toast.success("Horario guardado.");}).catch((e)=>onError(e instanceof Error?e.message:"Error")).finally(()=>setSavingHora(false)); };
+  const handleToggleTipo = (tipoName: string) => {
+    const exists = config.tipos_habilitados.includes(tipoName);
+    const updated = exists ? config.tipos_habilitados.filter((t)=>t!==tipoName) : [...config.tipos_habilitados, tipoName];
+    const nextConfig = { ...config, tipos_habilitados: updated }; setConfig(nextConfig); setSavingTipos(true);
+    api<ConfiguracionParametrosDTO>("/parametros-clinicos/config",{method:"PUT",body:JSON.stringify(nextConfig)}).then((data)=>{setConfig(data); toast.success(`Tipo "${tipoName}" ${exists?"deshabilitado":"habilitado"}.`);}).catch((e)=>onError(e instanceof Error?e.message:"Error")).finally(()=>setSavingTipos(false));
+  };
+  const handleResetNow = () => {
+    if(!window.confirm("¿Restablecer parámetros a valores por defecto?")) return;
+    setResetting(true); api<{message:string}>("/parametros-clinicos/restablecer-defecto",{method:"POST"}).then((res)=>toast.success(res.message||"Restablecidos")).catch((e)=>onError(e instanceof Error?e.message:"Error")).finally(()=>setResetting(false));
+  };
+  const allAvailableTypes = [
+    { key: "Historia Clinica", label: "Historia Clínica", desc: "HCPDIAAUT" },
+    { key: "Enfermeria", label: "Enfermería", desc: "HCNMHRCRENF y HCNHAPLMED" },
+    { key: "Otros", label: "Otros", desc: "Habilitación general con observación" },
+  ];
+  if(loading) return <div className="p-8 text-center text-slate-500">Cargando configuración...</div>;
+  return (
+    <div className="space-y-6">
+      <SectionHeader title="Valores Parámetros" subtitle="Valores por defecto, restablecimiento automático y tipos de parámetros." />
+      <div className="grid gap-6 md:grid-cols-3">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3"><div className="p-2 bg-[#0778ac]/10 text-[#0778ac] rounded-xl font-bold">⚙</div><div><h3 className="font-bold text-slate-800 text-sm">Valores por Defecto</h3><p className="text-xs text-slate-400">Valores estándar de cierre</p></div></div>
+            <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Historia Clínica (HCPDIAAUT)</label><input type="number" value={config.hc_default} onChange={(e)=>setConfig({...config, hc_default:Number(e.target.value)})} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white font-semibold" /></div>
+            <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Enfermería (HCNMHRCRENF)</label><input type="number" value={config.enf_hcrenf_default} onChange={(e)=>setConfig({...config, enf_hcrenf_default:Number(e.target.value)})} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white font-semibold" /></div>
+            <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Enfermería (HCNHAPLMED)</label><input type="number" value={config.enf_haplmed_default} onChange={(e)=>setConfig({...config, enf_haplmed_default:Number(e.target.value)})} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white font-semibold" /></div>
+          </div>
+          <div className="pt-5 mt-4 border-t border-slate-100 space-y-2">
+            <button onClick={handleSaveDefaults} disabled={savingDefaults} className="w-full py-2.5 px-4 rounded-xl bg-[#0778ac] text-white text-xs font-bold disabled:opacity-50">{savingDefaults?"Guardando...":"Guardar Valores por Defecto"}</button>
+            <button onClick={handleResetNow} disabled={resetting} className="w-full py-2.5 px-4 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50"><RotateCcw size={13}/> {resetting?"Restableciendo...":"Restablecer Ahora"}</button>
+          </div>
+        </div>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3"><div className="p-2 bg-amber-500/10 text-amber-600 rounded-xl font-bold">⏰</div><div><h3 className="font-bold text-slate-800 text-sm">Restablecimiento Automático</h3><p className="text-xs text-slate-400">Programación diaria</p></div></div>
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-200"><span className="text-xs font-semibold text-slate-700">Activar tarea automática</span><input type="checkbox" checked={config.auto_restablecer} onChange={(e)=>setConfig({...config, auto_restablecer:e.target.checked})} className="w-5 h-5 accent-[#0778ac]" /></div>
+            <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Hora Restablecimiento (24h)</label><input type="time" value={config.hora_restablecimiento} onChange={(e)=>setConfig({...config, hora_restablecimiento:e.target.value})} disabled={!config.auto_restablecer} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white font-semibold disabled:bg-slate-100" /></div>
+            <div className="p-3.5 bg-blue-50 border border-blue-100 rounded-2xl text-xs text-blue-800">Todos los días a las <strong>{config.hora_restablecimiento}</strong> se restablecerán los parámetros abiertos.</div>
+          </div>
+          <div className="pt-5 mt-4 border-t border-slate-100"><button onClick={handleSaveHora} disabled={savingHora} className="w-full py-2.5 px-4 rounded-xl bg-[#0778ac] text-white text-xs font-bold disabled:opacity-50">{savingHora?"Guardando...":"Guardar Horario"}</button></div>
+        </div>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3"><div className="p-2 bg-emerald-500/10 text-emerald-600 rounded-xl font-bold">📋</div><div><h3 className="font-bold text-slate-800 text-sm">Tipos de Parámetros</h3><p className="text-xs text-slate-400">Activar/desactivar módulos</p></div></div>
+            <div className="space-y-3">{allAvailableTypes.map((tipo)=>{const isEnabled=config.tipos_habilitados.includes(tipo.key); return (<div key={tipo.key} className={`p-3.5 rounded-2xl border ${isEnabled?"bg-emerald-50/50 border-emerald-200":"bg-slate-50 border-slate-200 opacity-60"}`}><div className="flex items-center justify-between"><span className="text-xs font-bold text-slate-800">{tipo.label}</span><button onClick={()=>handleToggleTipo(tipo.key)} disabled={savingTipos} className={`px-3 py-1 rounded-full text-xs font-bold ${isEnabled?"bg-emerald-600 text-white":"bg-slate-300 text-slate-700"}`}>{isEnabled?"Habilitado":"Deshabilitado"}</button></div><p className="text-[11px] text-slate-500 mt-1">{tipo.desc}</p></div>);})}</div>
+          </div>
+          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-[11px] text-slate-500 text-center mt-4">Solo tipos habilitados aparecen en solicitudes.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ParametrosSolicitudesSection({ onError }: { onError: (msg: string) => void }) {
+  const [config, setConfig] = useState<ConfiguracionParametrosDTO>({
+    hc_default: 30, enf_hcrenf_default: 48, enf_haplmed_default: 48,
+    hora_restablecimiento: "20:05", auto_restablecer: true,
+    tipos_habilitados: ["Historia Clinica", "Enfermeria", "Otros"],
+    correos_historia_clinica: "", correos_enfermeria: "", correos_otros: "",
+  });
+  const [loading, setLoading] = useState(true);
+  const [savingCorreos, setSavingCorreos] = useState(false);
+  useEffect(()=>{ api<ConfiguracionParametrosDTO>("/parametros-clinicos/config").then(setConfig).catch((e)=>onError(e instanceof Error?e.message:"Error")).finally(()=>setLoading(false)); }, []);
+  const handleSaveCorreos = () => { setSavingCorreos(true); api<ConfiguracionParametrosDTO>("/parametros-clinicos/config",{method:"PUT",body:JSON.stringify(config)}).then((data)=>{setConfig(data); toast.success("Correos guardados.");}).catch((e)=>onError(e instanceof Error?e.message:"Error")).finally(()=>setSavingCorreos(false)); };
+  if(loading) return <div className="p-8 text-center text-slate-500">Cargando...</div>;
+  return (
+    <div className="space-y-6">
+      <SectionHeader title="Parámetros Solicitudes" subtitle="Parametrización de envíos de correos electrónicos por tipo de parámetro." />
+      <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+        <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-4"><div className="p-2 bg-indigo-500/10 text-indigo-600 rounded-xl font-bold">✉</div><div><h3 className="font-bold text-slate-800 text-sm">Correos Electrónicos por Tipo</h3><p className="text-xs text-slate-400">Separe correos por comas para cada tipo.</p></div></div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Correos - Historia Clínica</label><textarea value={config.correos_historia_clinica||""} onChange={(e)=>setConfig({...config, correos_historia_clinica:e.target.value})} placeholder="ejemplo@empresa.com" rows={3} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white font-mono" /></div>
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Correos - Enfermería</label><textarea value={config.correos_enfermeria||""} onChange={(e)=>setConfig({...config, correos_enfermeria:e.target.value})} placeholder="ejemplo@empresa.com" rows={3} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white font-mono" /></div>
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Correos - Otros</label><textarea value={config.correos_otros||""} onChange={(e)=>setConfig({...config, correos_otros:e.target.value})} placeholder="ejemplo@empresa.com" rows={3} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white font-mono" /></div>
+        </div>
+        <div className="pt-4 mt-4 border-t border-slate-100 flex justify-end"><button onClick={handleSaveCorreos} disabled={savingCorreos} className="py-2.5 px-6 rounded-xl bg-indigo-600 text-white text-xs font-bold disabled:opacity-50">{savingCorreos?"Guardando...":"Guardar Correos"}</button></div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Usuarios Solicitud Section (Generales > Usuarios) ───────────────────────
+type UsuarioSolicitudItem = {
+  id: number; nombre_completo: string; nombre_usuario: string; correo_institucional: string; cargo: string; estado: string; firma_url: string; created_at: string; plataformas: number[];
+};
+
+function UsuariosSolicitudSection({ onError }: { onError: (msg: string) => void }) {
+  const [items, setItems] = useState<UsuarioSolicitudItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [detailItem, setDetailItem] = useState<UsuarioSolicitudItem | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [resetItem, setResetItem] = useState<UsuarioSolicitudItem | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetPassword, setResetPassword] = useState("");
+  const [editItem, setEditItem] = useState<UsuarioSolicitudItem | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ nombre_completo: "", correo_institucional: "", cargo: "", nombre_usuario: "" });
+  const [editFirma, setEditFirma] = useState<File | null>(null);
+  const [form, setForm] = useState({ nombre_completo: "", correo_institucional: "", cargo: "", nombre_usuario: "", password: "" });
+  const [firma, setFirma] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const fetchItems = () => {
+    setLoading(true);
+    api<UsuarioSolicitudItem[]>("/usuarios-solicitud").then(setItems).catch((e)=>onError(e instanceof Error?e.message:"Error cargando usuarios")).finally(()=>setLoading(false));
+  };
+  useEffect(()=>{ fetchItems(); }, []);
+  const handleCreate = () => {
+    if(!form.nombre_completo.trim() || !form.correo_institucional.trim() || !form.cargo.trim() || !form.password.trim() || !firma) { toast.error("Complete todos los campos y firma JPG/PNG obligatoria"); return; }
+    if(form.password.length < 8){ toast.error("Contraseña mínima 8 caracteres"); return; }
+    setSaving(true);
+    const fd = new FormData();
+    fd.append("nombre_completo", form.nombre_completo.trim());
+    fd.append("correo_institucional", form.correo_institucional.trim());
+    fd.append("cargo", form.cargo.trim());
+    if(form.nombre_usuario.trim()) fd.append("nombre_usuario", form.nombre_usuario.trim());
+    fd.append("password", form.password);
+    fd.append("firma", firma);
+    api<UsuarioSolicitudItem>("/usuarios-solicitud",{method:"POST", body: fd}).then((created)=>{ setItems((prev)=>[created, ...prev]); setOpen(false); setForm({nombre_completo:"",correo_institucional:"",cargo:"",nombre_usuario:"",password:""}); setFirma(null); toast.success("Usuario creado"); }).catch((e)=>toast.error(e instanceof Error?e.message:"Error creando usuario")).finally(()=>setSaving(false));
+  };
+  const handleToggleEstado = (u: UsuarioSolicitudItem) => {
+    if(!window.confirm(`¿${u.estado==="Activo"?"Inactivar":"Activar"} a ${u.nombre_completo}?`)) return;
+    api<UsuarioSolicitudItem>(`/usuarios-solicitud/${u.id}/estado`,{method:"PATCH"}).then((updated)=> setItems((prev)=>prev.map((x)=>x.id===updated.id?updated:x))).catch((e)=>toast.error(e instanceof Error?e.message:"Error"));
+  };
+  const handleReset = () => {
+    if(!resetItem || resetPassword.length < 8){ toast.error("Contraseña mínima 8"); return; }
+    api(`/usuarios-solicitud/${resetItem.id}/reset-password`,{method:"POST", body: JSON.stringify({password: resetPassword})}).then(()=>{ toast.success("Contraseña restablecida"); setResetOpen(false); setResetItem(null); setResetPassword(""); }).catch((e)=>toast.error(e instanceof Error?e.message:"Error"));
+  };
+  const handleEdit = () => {
+    if(!editItem) return;
+    if(!editForm.nombre_completo.trim() || !editForm.correo_institucional.trim() || !editForm.cargo.trim()){ toast.error("Campos obligatorios"); return; }
+    const fd = new FormData();
+    fd.append("nombre_completo", editForm.nombre_completo);
+    fd.append("correo_institucional", editForm.correo_institucional);
+    fd.append("cargo", editForm.cargo);
+    fd.append("nombre_usuario", editForm.nombre_usuario);
+    // firma opcional en edición
+    const hasFirma = !!editFirma;
+    // usar fetch con FormData via api wrapper: need to handle FormData without JSON header
+    // api helper detects FormData and omits Content-Type
+    if(hasFirma && editFirma) fd.append("firma", editFirma);
+    api<UsuarioSolicitudItem>(`/usuarios-solicitud/${editItem.id}`,{method:"PUT", body: fd}).then((updated)=>{ setItems((prev)=>prev.map((x)=>x.id===updated.id?updated:x)); setEditOpen(false); setEditItem(null); setEditFirma(null); toast.success("Usuario actualizado"); }).catch((e)=>toast.error(e instanceof Error?e.message:"Error"));
+  };
+  const pagination = useTablePagination(items);
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SectionHeader title="Usuarios de Solicitudes de Usuarios" subtitle="Gestión de usuarios para Solicitud de creación de Usuarios (nombre, correo, cargo, firma JPG/PNG)." />
+        <Btn v="primary" onClick={()=>setOpen(true)}><Plus size={14}/> Crear Usuario</Btn>
+      </div>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10"><tr>{["Nombre completo","Nombre de Usuario","Correo Institucional","Cargo","Estado","Fecha de Creación","Acción"].map((h)=><th key={h} className="px-3 py-2.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Cargando...</td></tr> : pagination.rows.length===0 ? <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">No hay usuarios.</td></tr> : pagination.rows.map((u)=>(
+                <tr key={u.id} className="hover:bg-slate-50/70">
+                  <td className="px-3 py-2.5 font-semibold text-slate-800">{u.nombre_completo}</td>
+                  <td className="px-3 py-2.5 font-mono text-xs text-[#0778ac]">{u.nombre_usuario}</td>
+                  <td className="px-3 py-2.5 text-slate-600 text-xs">{u.correo_institucional}</td>
+                  <td className="px-3 py-2.5 text-slate-700 text-xs">{u.cargo}</td>
+                  <td className="px-3 py-2.5"><span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${u.estado==="Activo"?"bg-emerald-100 text-emerald-800 border-emerald-200":"bg-slate-100 text-slate-600 border-slate-200"}`}>{u.estado}</span></td>
+                  <td className="px-3 py-2.5 text-xs font-mono text-slate-500">{new Date(u.created_at).toLocaleString("es-CO")}</td>
+                  <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1">
+                    <Btn v="secondary" sm onClick={()=>handleToggleEstado(u)}><Power size={12}/>{u.estado==="Activo"?"Inactivar":"Activar"}</Btn>
+                    <Btn v="secondary" sm onClick={()=>{ setEditForm({nombre_completo:u.nombre_completo, correo_institucional:u.correo_institucional, cargo:u.cargo, nombre_usuario:u.nombre_usuario}); setEditItem(u); setEditOpen(true); }}><Pencil size={12}/>Editar</Btn>
+                    <Btn v="ghost" sm onClick={()=>{ setDetailItem(u); setDetailOpen(true); }}><Eye size={12}/>Consultar</Btn>
+                    <Btn v="secondary" sm onClick={()=>{ setResetItem(u); setResetOpen(true); }}><KeyRound size={12}/>Reset Pass</Btn>
+                  </div></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <TablePaginationControls pagination={pagination} itemLabel="usuarios" />
+      </div>
+
+      <Modal open={open} onClose={()=>setOpen(false)} title="Crear Usuario" size="md">
+        <div className="space-y-4">
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Nombre completo del Funcionario *</label><input value={form.nombre_completo} onChange={(e)=>setForm({...form, nombre_completo:e.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" /></div>
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Correo Institucional *</label><input type="email" value={form.correo_institucional} onChange={(e)=>setForm({...form, correo_institucional:e.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" /></div>
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Cargo *</label><input value={form.cargo} onChange={(e)=>setForm({...form, cargo:e.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" /></div>
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Nombre de Usuario (opcional, auto si vacío)</label><input value={form.nombre_usuario} onChange={(e)=>setForm({...form, nombre_usuario:e.target.value})} placeholder="ej: yeison.perez" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" /></div>
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Contraseña * (mín 8, bcrypt)</label><input type="password" value={form.password} onChange={(e)=>setForm({...form, password:e.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" /></div>
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Firma JPG/PNG *</label><input type="file" accept=".jpg,.jpeg,.png" onChange={(e)=>setFirma(e.target.files?.[0]||null)} className="w-full text-sm" />{firma && <p className="text-xs text-emerald-600 mt-1">Seleccionado: {firma.name}</p>}</div>
+          <div className="flex gap-2 pt-2 border-t border-slate-100"><Btn v="primary" onClick={handleCreate} disabled={saving}>Crear</Btn><Btn v="secondary" onClick={()=>setOpen(false)}>Cancelar</Btn></div>
+        </div>
+      </Modal>
+
+      <Modal open={detailOpen} onClose={()=>{setDetailOpen(false); setDetailItem(null);}} title={`Detalle: ${detailItem?.nombre_completo||""}`} size="md">
+        {!detailItem ? null : (
+          <div className="space-y-3 text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase text-slate-400">Nombre completo</p><p className="font-semibold">{detailItem.nombre_completo}</p></div>
+              <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase text-slate-400">Usuario</p><p className="font-mono font-semibold text-[#0778ac]">{detailItem.nombre_usuario}</p></div>
+              <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase text-slate-400">Correo</p><p className="font-semibold">{detailItem.correo_institucional}</p></div>
+              <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase text-slate-400">Cargo</p><p className="font-semibold">{detailItem.cargo}</p></div>
+              <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase text-slate-400">Estado</p><p className="font-semibold">{detailItem.estado}</p></div>
+              <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase text-slate-400">Creado</p><p className="font-semibold">{new Date(detailItem.created_at).toLocaleString("es-CO")}</p></div>
+            </div>
+            {detailItem.firma_url && <div className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] uppercase text-slate-400 mb-2">Firma</p><img src={detailItem.firma_url} alt="firma" className="max-h-28 border border-slate-200 rounded-lg" /></div>}
+            <div className="flex justify-end pt-2 border-t border-slate-100"><Btn v="secondary" onClick={()=>{setDetailOpen(false); setDetailItem(null);}}>Cerrar</Btn></div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={editOpen} onClose={()=>{setEditOpen(false); setEditItem(null); setEditFirma(null);}} title={`Editar: ${editItem?.nombre_completo||""}`} size="md">
+        <div className="space-y-4">
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Nombre completo *</label><input value={editForm.nombre_completo} onChange={(e)=>setEditForm({...editForm, nombre_completo:e.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" /></div>
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Correo *</label><input value={editForm.correo_institucional} onChange={(e)=>setEditForm({...editForm, correo_institucional:e.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" /></div>
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Cargo *</label><input value={editForm.cargo} onChange={(e)=>setEditForm({...editForm, cargo:e.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" /></div>
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Nombre usuario</label><input value={editForm.nombre_usuario} onChange={(e)=>setEditForm({...editForm, nombre_usuario:e.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" /></div>
+          <div><label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Firma nueva (opcional JPG/PNG)</label><input type="file" accept=".jpg,.jpeg,.png" onChange={(e)=>setEditFirma(e.target.files?.[0]||null)} className="w-full text-sm" /></div>
+          <div className="flex gap-2 pt-2 border-t border-slate-100"><Btn v="primary" onClick={handleEdit}>Guardar</Btn><Btn v="secondary" onClick={()=>{setEditOpen(false); setEditItem(null); setEditFirma(null);}}>Cancelar</Btn></div>
+        </div>
+      </Modal>
+
+      <Modal open={resetOpen} onClose={()=>{setResetOpen(false); setResetItem(null); setResetPassword("");}} title={`Restablecer Contraseña: ${resetItem?.nombre_completo||""}`} size="md">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">Ingrese nueva contraseña (mín 8 caracteres, bcrypt).</p>
+          <input type="password" value={resetPassword} onChange={(e)=>setResetPassword(e.target.value)} placeholder="Nueva contraseña" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" />
+          <div className="flex gap-2 pt-2 border-t border-slate-100"><Btn v="primary" onClick={handleReset}>Restablecer</Btn><Btn v="secondary" onClick={()=>{setResetOpen(false); setResetItem(null); setResetPassword("");}}>Cancelar</Btn></div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+function UsuariosPermisosSection({ onError }: { onError: (msg: string) => void }) {
+  const [usuarios, setUsuarios] = useState<UsuarioSolicitudItem[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [plataformas, setPlataformas] = useState<{oid:number; nombre:string; activa:boolean; asignada:boolean}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const fetchUsuarios = () => api<UsuarioSolicitudItem[]>("/usuarios-solicitud").then((data)=>{ setUsuarios(data); if(data.length && selectedId===null) setSelectedId(data[0].id); }).catch((e)=>onError(e instanceof Error?e.message:"Error")).finally(()=>setLoading(false));
+  const fetchPermisos = (uid:number) => api<{plataformas:{oid:number; nombre:string; activa:boolean; asignada:boolean}[]; asignadas:number[]}>(`/usuarios-solicitud/${uid}/permisos-plataformas`).then((res)=> setPlataformas(res.plataformas)).catch((e)=>onError(e instanceof Error?e.message:"Error"));
+  useEffect(()=>{ fetchUsuarios(); }, []);
+  useEffect(()=>{ if(selectedId) fetchPermisos(selectedId); }, [selectedId]);
+  const toggle = (oid:number) => setPlataformas((prev)=> prev.map((p)=> p.oid===oid ? {...p, asignada: !p.asignada} : p));
+  const handleSave = () => {
+    if(!selectedId) return;
+    const ids = plataformas.filter((p)=>p.asignada).map((p)=>p.oid);
+    setSaving(true);
+    api(`/usuarios-solicitud/${selectedId}/permisos-plataformas`,{method:"PUT", body: JSON.stringify({plataforma_ids: ids})}).then(()=>{ toast.success("Permisos actualizados"); }).catch((e)=>toast.error(e instanceof Error?e.message:"Error")).finally(()=>setSaving(false));
+  };
+  if(loading) return <div className="p-8 text-center text-slate-500">Cargando...</div>;
+  return (
+    <div className="space-y-6">
+      <SectionHeader title="Permisos de Usuarios" subtitle="Autoriza a qué plataformas puede solicitar creación cada usuario (Almera, Dinámica, Enterprise, etc.)." />
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">Seleccionar Usuario</label>
+          <select value={selectedId ?? ""} onChange={(e)=>setSelectedId(Number(e.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white font-semibold">
+            {usuarios.map((u)=><option key={u.id} value={u.id}>{u.nombre_completo} ({u.nombre_usuario}) - {u.correo_institucional}</option>)}
+          </select>
+          {usuarios.length===0 && <p className="text-xs text-slate-400 mt-2">No hay usuarios creados. Cree primero en Usuarios de Solicitudes de Usuarios.</p>}
+        </div>
+        {selectedId && (
+          <>
+            <div className="grid gap-3 md:grid-cols-3">
+              {plataformas.map((p)=>(
+                <label key={p.oid} className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer ${p.asignada?"bg-emerald-50 border-emerald-200":"bg-slate-50 border-slate-200 opacity-70"}`}>
+                  <input type="checkbox" checked={p.asignada} onChange={()=>toggle(p.oid)} className="w-4 h-4 accent-emerald-600" disabled={!p.activa} />
+                  <div><p className="text-xs font-bold text-slate-800">{p.nombre}</p><p className="text-[11px] text-slate-500">{p.activa?"Activa":"Inactiva"} {p.asignada?"• Asignada":""}</p></div>
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end pt-4 border-t border-slate-100"><Btn v="primary" onClick={handleSave} disabled={saving}>{saving?"Guardando...":"Guardar Permisos"}</Btn></div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Auditoria Section ────────────────────────────────────────────────────────
 
 interface AuditLogItem {
@@ -1964,19 +2258,27 @@ const ALL_SECTION_LABELS: Record<string, string> = {
   restaurarDB: "Restaurar DB",
   consultaVersiones: "Consultar versión",
   consultaRestauracionDB: "Consultar restauración BD",
-  versionParametros: "Parámetros",
+  versionParametros: "Parámetros (legacy)",
   detalles: "Detalles de Validación",
   solicitudParametro: "Habilitación de Parámetro",
   solicitudUsuario: "Creación de Usuario",
   solicitudPassword: "Restablecimiento de contraseña",
-  parametrosConfig: "Parámetros Generales",
+  parametrosConfig: "Parámetros Solicitudes (legacy)",
+  solicitudesManuales: "Solicitudes de manuales",
   reporteFirmas: "Reportes Generados",
   reporteDetalles: "Indicadores Generados",
   documentos_boletines: "Boletines Técnicos",
   documentos_manuales: "Manuales de Usuarios",
-  solicitudesManuales: "Solicitudes de manuales",
   auditoria: "Auditoría",
-  permisos: "Permisos",
+  permisos: "Permisos (legacy)",
+  // Nuevos módulos
+  parametrosEnviosCorreo: "Envíos de correos de Versión",
+  parametrosSolicitudes: "Parámetros Solicitudes",
+  valoresParametros: "Valores Parámetros",
+  generalesPermisos: "Generales - Permisos",
+  generalesPlataformas: "Generales - Plataformas",
+  generalesUsuarios: "Generales - Usuarios",
+  generalesUsuariosPermisos: "Generales - Usuarios Permisos",
 };
 
 const ALL_SECTION_KEYS = Object.keys(ALL_SECTION_LABELS);
@@ -2190,7 +2492,14 @@ type CoordTab =
   | "reporteDetalles"
   | "solicitudesManuales"
   | "auditoria"
-  | "permisos";
+  | "permisos"
+  | "parametrosEnviosCorreo"
+  | "parametrosSolicitudes"
+  | "valoresParametros"
+  | "generalesPermisos"
+  | "generalesPlataformas"
+  | "generalesUsuarios"
+  | "generalesUsuariosPermisos";
 
 function CoordinatorModule({
   versions, setVersions, observaciones, setObservaciones, onError,
@@ -2217,11 +2526,14 @@ function CoordinatorModule({
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({
     procesos: false,
     consultaVersion: false,
+    parametros: false,
     detalles: false,
     solicitudes: false,
     reportes: false,
     documentos: false,
     auditoria: false,
+    generales: false,
+    generalesUsuarios: false,
   });
 
   const [auditoriaSubmodulo, setAuditoriaSubmodulo] = useState<AuditSubmodulo>("LOGS_SISTEMAS");
@@ -2393,8 +2705,8 @@ function CoordinatorModule({
             </div>
           )}
 
-          {/* Folder: Consulta de Versión */}
-          {(canAccess("consultaVersiones") || canAccess("consultaRestauracionDB") || canAccess("versionParametros")) && (
+          {/* Folder: Consulta de Versión (ahora solo 2 items, Parámetros movido a módulo Parámetros) */}
+          {(canAccess("consultaVersiones") || canAccess("consultaRestauracionDB")) && (
             <div className="px-2 py-1 space-y-1">
               <button
                 onClick={() => toggleFolder("consultaVersion")}
@@ -2429,15 +2741,34 @@ function CoordinatorModule({
                       <span className="truncate block">2. Consultar restauración BD</span>
                     </button>
                   )}
-                  {canAccess("versionParametros") && matchesSearch("Parámetros") && (
-                    <button
-                      onClick={() => goToSection("versionParametros")}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${
-                        activeSection === "versionParametros" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                      }`}
-                    >
-                      <span className="truncate block">3. Parámetros</span>
-                    </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Folder: Parámetros (NUEVO) */}
+          {(canAccess("parametrosEnviosCorreo") || canAccess("parametrosSolicitudes") || canAccess("valoresParametros") || canAccess("versionParametros") || canAccess("parametrosConfig")) && (
+            <div className="px-2 py-1 space-y-1">
+              <button
+                onClick={() => toggleFolder("parametros")}
+                className="w-full flex items-center justify-between px-3 py-2 text-slate-200 hover:text-white font-bold rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-[#0091ea]">
+                  <Settings size={15} className="text-[#0091ea]" />
+                  <span>Parámetros</span>
+                </div>
+                <ChevronDown size={12} className={`transition-transform ${openFolders.parametros ? "rotate-180" : ""}`} />
+              </button>
+              {openFolders.parametros && (
+                <div className="ml-4 pl-3 border-l border-slate-700/60 space-y-1 my-1">
+                  {(canAccess("parametrosEnviosCorreo") || canAccess("versionParametros")) && matchesSearch("Envios de correos de Version") && (
+                    <button onClick={() => goToSection("parametrosEnviosCorreo")} className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${activeSection === "parametrosEnviosCorreo" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"}`}><span className="truncate block">Envíos de correos de Versión</span></button>
+                  )}
+                  {(canAccess("parametrosSolicitudes") || canAccess("parametrosConfig")) && matchesSearch("Parametros Solicitudes") && (
+                    <button onClick={() => goToSection("parametrosSolicitudes")} className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${activeSection === "parametrosSolicitudes" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"}`}><span className="truncate block">Parámetros Solicitudes</span></button>
+                  )}
+                  {(canAccess("valoresParametros") || canAccess("parametrosConfig")) && matchesSearch("Valores Parametros") && (
+                    <button onClick={() => goToSection("valoresParametros")} className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${activeSection === "valoresParametros" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"}`}><span className="truncate block">Valores Parámetros</span></button>
                   )}
                 </div>
               )}
@@ -2475,8 +2806,8 @@ function CoordinatorModule({
             </div>
           )}
 
-          {/* Folder: Solicitudes */}
-          {(canAccess("solicitudParametro") || canAccess("solicitudUsuario") || canAccess("solicitudPassword") || canAccess("parametrosConfig")) && (
+          {/* Folder: Solicitudes (incluye Solicitudes de manuales movido desde Docs) */}
+          {(canAccess("solicitudParametro") || canAccess("solicitudUsuario") || canAccess("solicitudPassword") || canAccess("solicitudesManuales")) && (
             <div className="px-2 py-1 space-y-1">
               <button
                 onClick={() => toggleFolder("solicitudes")}
@@ -2521,14 +2852,14 @@ function CoordinatorModule({
                       <span className="truncate block">Restablecimiento de contraseña</span>
                     </button>
                   )}
-                  {canAccess("parametrosConfig") && matchesSearch("Parámetros Generales") && (
+                  {canAccess("solicitudesManuales") && matchesSearch("Solicitudes de manuales") && (
                     <button
-                      onClick={() => goToSection("parametrosConfig")}
+                      onClick={() => goToSection("solicitudesManuales")}
                       className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${
-                        activeSection === "parametrosConfig" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                        activeSection === "solicitudesManuales" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"
                       }`}
                     >
-                      <span className="truncate block">Parámetros Solicitudes</span>
+                      <span className="truncate block">Solicitudes de manuales</span>
                     </button>
                   )}
                 </div>
@@ -2577,8 +2908,8 @@ function CoordinatorModule({
             </div>
           )}
 
-          {/* Folder: Documentos */}
-          {(canAccess("documentos_boletines") || canAccess("documentos_manuales") || canAccess("solicitudesManuales")) && (
+          {/* Folder: Documentos (ahora solo 2 items) */}
+          {(canAccess("documentos_boletines") || canAccess("documentos_manuales")) && (
             <div className="px-2 py-1 space-y-1">
               <button
                 onClick={() => toggleFolder("documentos")}
@@ -2611,16 +2942,6 @@ function CoordinatorModule({
                       }`}
                     >
                       <span className="truncate block">Manuales de Usuarios</span>
-                    </button>
-                  )}
-                  {canAccess("solicitudesManuales") && matchesSearch("Solicitudes de manuales") && (
-                    <button
-                      onClick={() => goToSection("solicitudesManuales")}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${
-                        activeSection === "solicitudesManuales" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                      }`}
-                    >
-                      <span className="truncate block">Solicitudes de manuales</span>
                     </button>
                   )}
                 </div>
@@ -2666,18 +2987,53 @@ function CoordinatorModule({
             </div>
           )}
 
-          {/* Permisos */}
-          {canAccess("permisos") && (
+          {/* Folder: Generales (NUEVO) */}
+          {(canAccess("generalesPermisos") || canAccess("generalesPlataformas") || canAccess("generalesUsuarios") || canAccess("generalesUsuariosPermisos") || canAccess("permisos")) && (
+            <div className="px-2 py-1 space-y-1">
+              <button
+                onClick={() => toggleFolder("generales")}
+                className="w-full flex items-center justify-between px-3 py-2 text-slate-200 hover:text-white font-bold rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-[#0091ea]">
+                  <Folder size={15} className="text-[#0091ea]" />
+                  <span>Generales</span>
+                </div>
+                <ChevronDown size={12} className={`transition-transform ${openFolders.generales ? "rotate-180" : ""}`} />
+              </button>
+              {openFolders.generales && (
+                <div className="ml-4 pl-3 border-l border-slate-700/60 space-y-1 my-1">
+                  {(canAccess("generalesPermisos") || canAccess("permisos")) && matchesSearch("Permisos") && (
+                    <button onClick={() => goToSection("generalesPermisos")} className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${activeSection === "generalesPermisos" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"}`}><span className="truncate block">Permisos</span></button>
+                  )}
+                  {canAccess("generalesPlataformas") && matchesSearch("Plataformas") && (
+                    <button onClick={() => goToSection("generalesPlataformas")} className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${activeSection === "generalesPlataformas" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"}`}><span className="truncate block">Plataformas</span></button>
+                  )}
+                  {(canAccess("generalesUsuarios") || canAccess("generalesUsuariosPermisos")) && (
+                    <div className="space-y-1">
+                      <button onClick={() => toggleFolder("generalesUsuarios")} className="w-full flex items-center justify-between px-2 py-1.5 text-slate-300 hover:text-white font-semibold rounded-md hover:bg-slate-800/60">
+                        <span className="text-xs">Usuarios</span><ChevronDown size={10} className={`transition-transform ${openFolders.generalesUsuarios ? "rotate-180" : ""}`} />
+                      </button>
+                      {openFolders.generalesUsuarios && (
+                        <div className="ml-3 pl-2 border-l border-slate-700/60 space-y-1">
+                          {canAccess("generalesUsuarios") && matchesSearch("Usuarios de Solicitudes") && (
+                            <button onClick={() => goToSection("generalesUsuarios")} className={`w-full text-left px-2 py-1 rounded-md font-medium transition-all text-xs ${activeSection === "generalesUsuarios" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"}`}><span className="truncate block">Usuarios de Solicitudes de Usuarios</span></button>
+                          )}
+                          {canAccess("generalesUsuariosPermisos") && matchesSearch("Permisos") && (
+                            <button onClick={() => goToSection("generalesUsuariosPermisos")} className={`w-full text-left px-2 py-1 rounded-md font-medium transition-all text-xs ${activeSection === "generalesUsuariosPermisos" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"}`}><span className="truncate block">Permisos</span></button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {/* Legacy Permisos fallback */}
+          {canAccess("permisos") && !canAccess("generalesPermisos") && (
             <div className="px-2 py-1">
               {matchesSearch("Permisos") && (
-                <button
-                  onClick={() => goToSection("permisos")}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-semibold transition-all ${
-                    activeSection === "permisos" ? "bg-[#0091ea] text-white font-bold" : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                  }`}
-                >
-                  <Lock size={14} /> Permisos
-                </button>
+                <button onClick={() => goToSection("permisos")} className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-semibold transition-all ${activeSection === "permisos" ? "bg-[#0091ea] text-white font-bold" : "text-slate-300 hover:bg-slate-800 hover:text-white"}`}><Lock size={14} /> Permisos</button>
               )}
             </div>
           )}
@@ -2733,6 +3089,15 @@ function CoordinatorModule({
         {activeSection === "solicitudPassword" && (
           <PasswordResetRequests onError={onError} admin />
         )}
+        {(activeSection === "parametrosEnviosCorreo" || activeSection === "versionParametros") && (
+          <VersionCorreoParametrosSection onError={onError} />
+        )}
+        {activeSection === "parametrosSolicitudes" && (
+          <ParametrosSolicitudesSection onError={onError} />
+        )}
+        {activeSection === "valoresParametros" && (
+          <ValoresParametrosSection onError={onError} />
+        )}
         {activeSection === "parametrosConfig" && (
           <><ParametrosConfigSection onError={onError} /><AccessPlatformsConfig onError={onError} /></>
         )}
@@ -2745,8 +3110,17 @@ function CoordinatorModule({
         {activeSection === "auditoria" && (
           <AuditoriaSection submodulo={auditoriaSubmodulo} />
         )}
-        {activeSection === "permisos" && (
+        {(activeSection === "permisos" || activeSection === "generalesPermisos") && (
           <PermisosSection onError={onError} />
+        )}
+        {activeSection === "generalesPlataformas" && (
+          <AccessPlatformsConfig onError={onError} />
+        )}
+        {activeSection === "generalesUsuarios" && (
+          <UsuariosSolicitudSection onError={onError} />
+        )}
+        {activeSection === "generalesUsuariosPermisos" && (
+          <UsuariosPermisosSection onError={onError} />
         )}
       </div>
     </div>

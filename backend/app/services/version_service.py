@@ -26,7 +26,9 @@ ALL_COORDINATOR_SECTIONS = [
     "registro", "restaurarDB", "consultaVersiones", "consultaRestauracionDB", "versionParametros",
     "detalles", "solicitudParametro", "solicitudUsuario", "solicitudPassword", "parametrosConfig",
     "reporteFirmas", "reporteDetalles", "documentos_boletines", "documentos_manuales",
-    "solicitudesManuales", "auditoria", "permisos"
+    "solicitudesManuales", "auditoria", "permisos",
+    "parametrosEnviosCorreo", "parametrosSolicitudes", "valoresParametros",
+    "generalesPermisos", "generalesPlataformas", "generalesUsuarios", "generalesUsuariosPermisos"
 ]
 
 class VersionService:

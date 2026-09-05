@@ -26,6 +26,7 @@ class SolicitudCreacionUsuario(Base):
     nombre_usuario = Column(String(150), nullable=False)
     firma_url = Column(String(300), nullable=False)
     firma_cierre_url = Column(String(300), nullable=True)
+    plataforma_otros_nombre = Column(String(200), nullable=True)
     estado = Column(String(50), nullable=False, default="Pendiente")
     fecha_registro = Column(TIMESTAMP, nullable=False)
 

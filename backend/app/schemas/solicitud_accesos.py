@@ -21,6 +21,7 @@ class SolicitudCreacionUsuarioResponse(BaseModel):
     cargo: str
     nombre_usuario: str
     firma_url: str
+    plataforma_otros_nombre: str | None = None
     estado: str
     fecha_registro: datetime
 

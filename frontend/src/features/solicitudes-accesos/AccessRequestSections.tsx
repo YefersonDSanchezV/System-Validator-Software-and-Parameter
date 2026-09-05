@@ -70,6 +70,29 @@ const passwordInitial = {
   correo_jefe: "",
 };
 
+// Áreas para restablecimiento de contraseña - orden alfabético con OTROS al final (permite escritura para filtrar rápido)
+const AREAS_RESTABLECIMIENTO = [
+  "ADMINISTRATIVO",
+  "ADMISIONES",
+  "ALMACEN",
+  "AUDITORIA",
+  "CARTERA",
+  "COMUNICACIONES",
+  "CONSULTA EXTERNA",
+  "CONTABILIDAD",
+  "ENFERMERIA",
+  "FACTURACION",
+  "FARMACIA",
+  "FISIOTERAPIA",
+  "INFRAESTRUCTURA",
+  "INVESTIGACION",
+  "LABORATORIO",
+  "MEDICOS",
+  "RADICACION",
+  "SISTEMAS",
+  "OTROS",
+] as const;
+
 const CHART_COLORS = ["#0778ac", "#10b981", "#f59e0b", "#6366f1", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316"];
 
 function RequestTable({ headings, children, empty }: { headings: string[]; children: React.ReactNode; empty: boolean }) {
@@ -103,6 +126,8 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
   const [saving, setSaving] = useState(false);
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [otrosNombre, setOtrosNombre] = useState("");
+  const [allowedPlatforms, setAllowedPlatforms] = useState<string[] | null>(null);
   const [firmaPreview, setFirmaPreview] = useState("");
 
   const firstName = form.primer_nombre.trim().split(/\s+/)[0] || "";
@@ -110,11 +135,23 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
   const nombreUsuario = firstName && firstSurname ? firstName + "." + firstSurname : "";
   const set = (key: keyof typeof userInitial, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
+  const getUsuarioSolicitudToken = () => {
+    if(typeof window==="undefined") return null;
+    return localStorage.getItem("usuarios_solicitud_token");
+  };
   const loadData = () => {
     api<UserRequest[]>("/solicitudes-accesos/creacion-usuarios").then(setItems).catch(() => {});
     api<Platform[]>("/solicitudes-accesos/plataformas?modulo=creacion_usuario&solo_activas=true")
       .then((rows) => setPlatforms(rows.map((row) => row.nombre)))
       .catch(() => setPlatforms([]));
+    const token = getUsuarioSolicitudToken();
+    if(token){
+      fetch(`${import.meta.env.VITE_API_BASE_URL || "/api/v1"}/auth/usuarios-solicitud/me/permisos`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.ok?r.json():null).then((data)=>{
+        if(data?.plataformas){ setAllowedPlatforms(data.plataformas); }
+      }).catch(()=>{});
+    } else {
+      setAllowedPlatforms(null);
+    }
   };
 
   useEffect(() => {
@@ -127,26 +164,39 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
     setFirmaPreview(file ? URL.createObjectURL(file) : "");
   };
 
+  const visiblePlatforms = allowedPlatforms ? platforms.filter((p)=> allowedPlatforms.includes(p)) : platforms;
+  const displayPlatforms = [...visiblePlatforms, "Otros"];
+
   const save = () => {
     if (Object.entries(form).some(([key, value]) => key !== "segundo_nombre" && !value.trim()) || !firma || selectedTypes.length === 0) {
       onError("Complete todos los campos obligatorios y adjunte la firma.");
+      return;
+    }
+    if (selectedTypes.includes("Otros") && !otrosNombre.trim()) {
+      onError("Debe indicar el nombre de la plataforma para 'Otros'.");
       return;
     }
     if (!["image/jpeg", "image/png"].includes(firma.type)) {
       onError("La firma debe estar en formato JPG o PNG.");
       return;
     }
+    const finalTipos = selectedTypes;
     const data = new FormData();
     Object.entries(form).forEach(([key, value]) => data.append(key, value.trim()));
-    data.append("tipos", JSON.stringify(platforms.filter((name) => selectedTypes.includes(name))));
+    data.append("tipos", JSON.stringify(finalTipos));
     data.append("nombre_usuario", nombreUsuario);
     data.append("firma", firma);
+    if(finalTipos.includes("Otros")) data.append("plataforma_otros_nombre", otrosNombre.trim());
     setSaving(true);
-    api<UserRequest>("/solicitudes-accesos/creacion-usuarios", { method: "POST", body: data })
+    const token = getUsuarioSolicitudToken();
+    const headers: Record<string,string> = {};
+    if(token) headers["Authorization"] = `Bearer ${token}`;
+    api<UserRequest>("/solicitudes-accesos/creacion-usuarios", { method: "POST", body: data, headers } as any)
       .then((created) => {
         setItems((current) => [created, ...current]);
         setForm(userInitial);
         setSelectedTypes([]);
+        setOtrosNombre("");
         setFirma(null);
         if (firmaPreview) URL.revokeObjectURL(firmaPreview);
         setFirmaPreview("");
@@ -235,9 +285,10 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2 space-y-2">
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">¿En qué módulo(s) van a crear al empleado? *</label>
+            {allowedPlatforms !== null && <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">Mostrando solo plataformas permitidas para tu usuario. Para más accesos contacta al Administrador en Generales &gt; Usuarios &gt; Permisos.</p>}
             <div className="flex flex-wrap gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
-              {platforms.length > 0 ? (
-                platforms.map((name) => (
+              {displayPlatforms.length > 0 ? (
+                displayPlatforms.map((name) => (
                   <label key={name} className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer select-none">
                     <input
                       type="checkbox"
@@ -247,13 +298,19 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
                       }
                       className="rounded border-slate-300 text-[#0778ac] focus:ring-[#0778ac]"
                     />
-                    {name}
+                    {name} {name==="Otros" && <span className="text-[10px] bg-slate-200 px-1.5 py-0.5 rounded">Otro</span>}
                   </label>
                 ))
               ) : (
                 <p className="text-xs text-slate-500 py-1">No hay plataformas activas configuradas. Registre plataformas en Administrador &gt; Plataformas.</p>
               )}
             </div>
+            {selectedTypes.includes("Otros") && (
+              <div className="mt-2">
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Nombre de la plataforma para &quot;Otros&quot; *</label>
+                <input value={otrosNombre} onChange={(e)=>setOtrosNombre(e.target.value)} placeholder="Ingrese el nombre de la plataforma" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]" />
+              </div>
+            )}
             {selectedTypes.includes("Todos") && (
               <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-800 text-xs font-medium animate-fadeIn">
                 <Info size={16} className="shrink-0 text-blue-600" />
@@ -479,10 +536,21 @@ function AdminUserActions({ item, refresh, onError }: { item: UserRequest; refre
 export function PasswordResetRequests({ onError, admin = false }: { onError: (message: string) => void; admin?: boolean }) {
   const [items, setItems] = useState<PasswordRequest[]>([]);
   const [form, setForm] = useState(passwordInitial);
+  const [areaOtro, setAreaOtro] = useState("");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [platforms, setPlatforms] = useState<string[]>([]);
   const set = (key: keyof typeof passwordInitial, value: string) => setForm((current) => ({ ...current, [key]: value }));
+
+  const handleAreaChange = (value: string) => {
+    const upper = value.toUpperCase();
+    set("area", upper);
+    if (upper !== "OTROS") {
+      setAreaOtro("");
+    }
+  };
+
+  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
   const loadData = () => {
     api<PasswordRequest[]>("/solicitudes-accesos/restablecimientos-password").then(setItems).catch(() => {});
@@ -504,15 +572,31 @@ export function PasswordResetRequests({ onError, admin = false }: { onError: (me
   }, []);
 
   const save = () => {
-    if (Object.values(form).some((value) => !value.trim())) {
+    const areaToSend = form.area === "OTROS" ? areaOtro.trim() : form.area.trim();
+    // Validación de áreas
+    if (!form.plataforma.trim() || !form.solicitante.trim() || !form.area.trim() || !form.usuario.trim() || !form.observacion.trim() || !form.correo_jefe.trim()) {
       onError("Complete todos los campos obligatorios.");
       return;
     }
+    if (form.area === "OTROS" && !areaOtro.trim()) {
+      onError("Especifique el nombre del área cuando seleccione OTROS.");
+      return;
+    }
+    if (form.area !== "OTROS" && !(AREAS_RESTABLECIMIENTO as readonly string[]).includes(form.area)) {
+      onError("Seleccione un área válida de la lista.");
+      return;
+    }
+    if (!isValidEmail(form.correo_jefe)) {
+      onError("Ingrese un correo válido para el jefe directo.");
+      return;
+    }
+    const payload = { ...form, area: areaToSend };
     setSaving(true);
-    api<PasswordRequest>("/solicitudes-accesos/restablecimientos-password", { method: "POST", body: JSON.stringify(form) })
+    api<PasswordRequest>("/solicitudes-accesos/restablecimientos-password", { method: "POST", body: JSON.stringify(payload) })
       .then((created) => {
         setItems((current) => [created, ...current]);
         setForm(passwordInitial);
+        setAreaOtro("");
         setOpen(false);
         toast.success("Solicitud de restablecimiento registrada.");
       })
@@ -679,9 +763,49 @@ export function PasswordResetRequests({ onError, admin = false }: { onError: (me
             )}
           </div>
           <FormInput label="Solicitante" required value={form.solicitante} onChange={(event) => set("solicitante", event.target.value)} />
-          <FormInput label="Área" required value={form.area} onChange={(event) => set("area", event.target.value)} />
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+              Área<span className="text-red-500 ml-1">*</span>
+            </label>
+            <input
+              list="areas-restablecimiento-list"
+              value={form.area}
+              onChange={(event) => handleAreaChange(event.target.value)}
+              placeholder="Seleccione o escriba el área..."
+              className="px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0778ac] focus:border-[#0778ac] transition-all placeholder:text-slate-400"
+            />
+            <datalist id="areas-restablecimiento-list">
+              {AREAS_RESTABLECIMIENTO.map((area) => (
+                <option key={area} value={area} />
+              ))}
+            </datalist>
+            <p className="text-[11px] text-slate-400">Escriba para filtrar las áreas disponibles.</p>
+          </div>
+          {form.area === "OTROS" && (
+            <div className="md:col-span-2">
+              <FormInput
+                label="Especifique el nombre del área"
+                required
+                value={areaOtro}
+                onChange={(event) => setAreaOtro(event.target.value)}
+                placeholder="Ingrese el nombre del área"
+              />
+            </div>
+          )}
           <FormInput label="Usuario a restablecer" required value={form.usuario} onChange={(event) => set("usuario", event.target.value)} />
-          <FormInput label="Correo del jefe directo" required type="email" value={form.correo_jefe} onChange={(event) => set("correo_jefe", event.target.value)} />
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+              Correo del jefe directo<span className="text-red-500 ml-1">*</span>
+            </label>
+            <input
+              type="email"
+              value={form.correo_jefe}
+              onChange={(event) => set("correo_jefe", event.target.value)}
+              placeholder="jefe.directo@icvc.co"
+              className="px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0778ac] focus:border-[#0778ac] transition-all placeholder:text-slate-400"
+            />
+            <p className="text-[11px] text-slate-400">Similar al campo de correo al notificar creación de usuarios.</p>
+          </div>
           <div className="md:col-span-2">
             <FormTextarea label="Observación del restablecimiento" required rows={4} value={form.observacion} onChange={(event) => set("observacion", event.target.value)} />
           </div>

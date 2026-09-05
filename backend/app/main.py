@@ -28,6 +28,7 @@ from app.api.v1 import (
     reportes, # reportes is in api.v1.reportes
     auditoria,
     solicitudes_accesos,
+    usuarios_solicitud,
 )
 from app.core.audit_middleware import AuditMiddleware
 from app.core.scheduler import init_scheduler
@@ -43,6 +44,8 @@ logger = logging.getLogger(__name__)
 
 
 def initialize_database():
+    # importar modelos nuevos para que Base los conozca
+    from app.models.usuarios_solicitud import UsuarioSolicitud, UsuarioSolicitudPlataforma  # noqa: F401
     Base.metadata.create_all(bind=engine)
 
     with engine.begin() as conn:
@@ -63,6 +66,7 @@ def initialize_database():
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS observacion_resolucion TEXT"))
         conn.execute(text("ALTER TABLE solicitud_creacion_usuario ADD COLUMN IF NOT EXISTS tipos JSONB"))
         conn.execute(text("ALTER TABLE solicitud_creacion_usuario ADD COLUMN IF NOT EXISTS firma_cierre_url VARCHAR(300)"))
+        conn.execute(text("ALTER TABLE solicitud_creacion_usuario ADD COLUMN IF NOT EXISTS plataforma_otros_nombre VARCHAR(200)"))
         conn.execute(text("ALTER TABLE solicitud_restablecimiento_password ADD COLUMN IF NOT EXISTS firma_cierre_url VARCHAR(300)"))
         conn.execute(text("UPDATE solicitud_creacion_usuario SET tipos = jsonb_build_array(tipo) WHERE tipos IS NULL AND tipo IS NOT NULL"))
 
@@ -125,6 +129,7 @@ def initialize_database():
         conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS contenedor_bd VARCHAR(50)"))
         conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS num_compilacion VARCHAR(100)"))
         conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS fecha_compilacion TIMESTAMP"))
+        conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS es_produccion BOOLEAN DEFAULT false"))
 
         # Ensure configuracion_version_correos table exists via Base.metadata.create_all already, but also ensure default row
         try:
@@ -188,6 +193,7 @@ app.include_router(admin.router, prefix="/api/v1")
 app.include_router(parametros_clinicos.router, prefix="/api/v1")
 app.include_router(auditoria.router, prefix="/api/v1")
 app.include_router(solicitudes_accesos.router, prefix="/api/v1")
+app.include_router(usuarios_solicitud.router, prefix="/api/v1")
 
 
 @app.get("/")

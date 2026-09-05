@@ -28,6 +28,7 @@ from app.schemas.solicitud_accesos import (
 )
 from app.utils.file_storage import ensure_upload_dir, save_upload_file
 from app.utils.mailer import MailerConfig, build_signature_html, send_email
+from app.core.security import get_optional_usuario_solicitud
 
 router = APIRouter(prefix="/solicitudes-accesos", tags=["Solicitudes de accesos"])
 logger = logging.getLogger(__name__)
@@ -226,14 +227,43 @@ async def create_user(
     cargo: str = Form(...),
     nombre_usuario: str = Form(...),
     firma: UploadFile = File(...),
+    plataforma_otros_nombre: str | None = Form(None),
     db: Session = Depends(get_db),
+    current_usuario = Depends(get_optional_usuario_solicitud),
 ):
     try:
         selected = list(dict.fromkeys(json.loads(tipos)))
     except (TypeError, json.JSONDecodeError):
         raise HTTPException(422, "Debe seleccionar uno o más tipos.")
-    if not selected or not set(selected).issubset(active(db, "creacion_usuario")):
-        raise HTTPException(422, "Uno o más tipos están inactivos o no son válidos.")
+    if not selected:
+        raise HTTPException(422, "Debe seleccionar uno o más tipos.")
+    # Validación permisos si viene de usuario_solicitud autenticado
+    if current_usuario is not None:
+        from app.models.usuarios_solicitud import UsuarioSolicitudPlataforma
+        allowed_ids = db.query(UsuarioSolicitudPlataforma.plataforma_id).filter(UsuarioSolicitudPlataforma.usuario_id == current_usuario.id).all()
+        allowed_ids = [r[0] for r in allowed_ids]
+        allowed_names = set()
+        if allowed_ids:
+            allowed_names = {p.nombre for p in db.query(PlataformaSolicitudAcceso).filter(PlataformaSolicitudAcceso.oid.in_(allowed_ids)).all()}
+            allowed_names.add("Otros")
+        else:
+            # si no tiene permisos asignados, no puede crear nada
+            raise HTTPException(403, "No tiene permisos para crear usuarios en ninguna plataforma")
+        invalid = [t for t in selected if t not in allowed_names]
+        if invalid:
+            raise HTTPException(403, f"No tiene permiso para la plataforma: {', '.join(invalid)}")
+    # validar que tipos sean activos o Otros
+    active_names = active(db, "creacion_usuario")
+    for t in selected:
+        if t == "Otros":
+            continue
+        if t not in active_names:
+            raise HTTPException(422, f"Plataforma '{t}' inactiva o no válida")
+    otros_nombre = (plataforma_otros_nombre or "").strip()
+    if "Otros" in selected and not otros_nombre:
+        raise HTTPException(422, "Debe indicar el nombre de la plataforma para 'Otros'")
+    if "Otros" not in selected and otros_nombre:
+        otros_nombre = ""  # ignorar si no selecciona Otros
     signature(firma)
 
     item = SolicitudCreacionUsuario(
@@ -253,6 +283,7 @@ async def create_user(
         cargo=required("Cargo", cargo),
         nombre_usuario=required("Nombre de usuario", nombre_usuario),
         firma_url=await save_upload_file(firma),
+        plataforma_otros_nombre=otros_nombre if otros_nombre else None,
         estado="Pendiente por creación",
         fecha_registro=datetime.utcnow(),
     )
