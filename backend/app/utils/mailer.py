@@ -102,14 +102,20 @@ def send_email(
     include_inline_signature: bool = True,
     attachments: list[MailAttachment] | None = None,
     custom_signature_path: str | None = None,
+    from_email: str | None = None,
+    from_name: str | None = None,
+    reply_to: str | None = None,
 ) -> None:
     if not recipients:
         return
 
     config = mailer_config or get_default_mailer_config()
 
-    if not config.host or not config.from_email:
+    effective_from = from_email or config.from_email
+    if not config.host or not effective_from:
         raise ValueError("SMTP no configurado. Defina la configuración SMTP correspondiente en .env")
+
+    sender_header = f"{from_name} <{effective_from}>" if from_name else effective_from
 
     has_attachments = bool(attachments)
     if is_html:
@@ -153,7 +159,9 @@ def send_email(
             message = body_container
 
         message["Subject"] = subject
-        message["From"] = config.from_email
+        message["From"] = sender_header
+        if reply_to:
+            message["Reply-To"] = reply_to
         message["To"] = ", ".join(recipients)
     else:
         if has_attachments:
@@ -162,7 +170,9 @@ def send_email(
         else:
             message = MIMEText(body, "plain", "utf-8")
         message["Subject"] = subject
-        message["From"] = config.from_email
+        message["From"] = sender_header
+        if reply_to:
+            message["Reply-To"] = reply_to
         message["To"] = ", ".join(recipients)
 
     for attachment in attachments or []:
@@ -173,9 +183,11 @@ def send_email(
     use_ssl = config.use_ssl or (config.port == 465 and not config.use_tls)
     smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
 
+    envelope_from = config.from_email or effective_from
+
     with smtp_cls(config.host, config.port, timeout=30) as server:
         if config.use_tls and not use_ssl:
             server.starttls()
         if config.user:
             server.login(config.user, config.password or "")
-        server.sendmail(config.from_email, recipients, message.as_string())
+        server.sendmail(envelope_from, recipients, message.as_string())

@@ -103,7 +103,7 @@ export function Field({ label, value }: { label: string; value: string }) {
 }
 
 export function FormInput({
-  label, required: req, ...props
+  label, required: req, className = "", ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; required?: boolean }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -113,7 +113,9 @@ export function FormInput({
       </label>
       <input
         {...props}
-        className="px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0778ac] focus:border-[#0778ac] transition-all placeholder:text-slate-400"
+        className={`px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0778ac] focus:border-[#0778ac] transition-all placeholder:text-slate-400 ${
+          props.readOnly || props.disabled ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200 select-none focus:ring-0 focus:border-slate-200 shadow-none" : ""
+        } ${className}`}
       />
     </div>
   );

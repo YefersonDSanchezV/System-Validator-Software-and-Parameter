@@ -3,7 +3,7 @@ import {
   Monitor, ShieldCheck, X, Eye, Pencil, Power, CheckCircle,
   XCircle, Download, Plus, ExternalLink, FileText, BookOpen,
   BarChart3, ArrowLeft, Upload, Printer, AlertCircle,
-  ChevronDown, ChevronRight, Settings, Home, ClipboardList,
+  ChevronDown, ChevronRight, ChevronLeft, Settings, Home, ClipboardList,
   Link, RotateCcw, Mail, UserPlus, KeyRound, Trash2, Folder, Search, Menu,
   Lock, Save,
 } from "lucide-react";
@@ -19,7 +19,7 @@ import { type ApiBoletin, type ApiBoletinPeriodo, type ApiBoletinImportResult } 
 import { type ApiManual, type SolicitudManual } from "@/types/manual";
 import { type ApiSolicitudParametro, type SolicitudParametro, type EstadoSolicitud, type ConfiguracionParametrosDTO, toSolicitudParametro } from "@/types/solicitud-parametro";
 import { type ParametrosEstado } from "@/types/parametros";
-import { AccessPlatformsConfig, PasswordResetRequests, UserCreationRequests } from "@/features/solicitudes-accesos/AccessRequestSections";
+import { AccessPlatformsConfig, PasswordResetRequests, SolicitudesEmailNotificationsConfig, UserCreationRequests } from "@/features/solicitudes-accesos/AccessRequestSections";
 
 const DEFAULT_DB_CONTAINERS = ["DGEMPRES99", "DGEMPRES98", "DGEMPRES10"] as const;
 const PAGE_SIZE_OPTIONS = [10, 20, 30] as const;
@@ -2272,8 +2272,7 @@ const ALL_SECTION_LABELS: Record<string, string> = {
   auditoria: "Auditoría",
   permisos: "Permisos (legacy)",
   // Nuevos módulos
-  parametrosEnviosCorreo: "Envíos de correos de Versión",
-  parametrosSolicitudes: "Parámetros Solicitudes",
+  parametrosCorreos: "Parámetros de Correos",
   valoresParametros: "Valores Parámetros",
   generalesPermisos: "Generales - Permisos",
   generalesPlataformas: "Generales - Plataformas",
@@ -2493,8 +2492,10 @@ type CoordTab =
   | "solicitudesManuales"
   | "auditoria"
   | "permisos"
+  | "parametrosCorreos"
   | "parametrosEnviosCorreo"
   | "parametrosSolicitudes"
+  | "parametrosCorreosNotificaciones"
   | "valoresParametros"
   | "generalesPermisos"
   | "generalesPlataformas"
@@ -2522,11 +2523,13 @@ function CoordinatorModule({
   const [activeSection, setActiveSection] = useState<CoordTab>(selectedSection);
   const [searchQuery, setSearchQuery] = useState("");
   const [userPermissions, setUserPermissions] = useState<string[]>(ALL_SECTION_KEYS);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({
     procesos: false,
     consultaVersion: false,
     parametros: false,
+    parametrosCorreos: false,
     detalles: false,
     solicitudes: false,
     reportes: false,
@@ -2583,7 +2586,19 @@ function CoordinatorModule({
     setActiveSection(selectedSection);
   }, [selectedSection]);
 
-  const canAccess = (key: string) => userPermissions.includes(key);
+  const canAccess = (key: string) => {
+    if (key === "parametrosCorreos") {
+      return (
+        userPermissions.includes("parametrosCorreos") ||
+        userPermissions.includes("parametrosEnviosCorreo") ||
+        userPermissions.includes("parametrosSolicitudes") ||
+        userPermissions.includes("parametrosCorreosNotificaciones") ||
+        userPermissions.includes("versionParametros") ||
+        userPermissions.includes("parametrosConfig")
+      );
+    }
+    return userPermissions.includes(key);
+  };
 
   const goToSection = (section: CoordTab, docView?: "boletines" | "manuales" | null, auditSub?: AuditSubmodulo) => {
     const permKey = section === "documentos"
@@ -2611,9 +2626,14 @@ function CoordinatorModule({
   return (
     <div className="flex flex-row h-full overflow-hidden w-full bg-[#f8f9fa]">
       {/* Sidebar Lateral Izquierdo */}
-      <aside className="w-64 shrink-0 bg-[#212529] text-white flex flex-col h-full shadow-xl z-20 select-none font-sans">
-        {/* Info Usuario + Botón Regresar al Inicio */}
-        <div className="px-3.5 py-3 flex items-center justify-between border-b border-slate-700/50 bg-[#1a1d21] gap-2">
+      <aside
+        className={`bg-[#212529] text-white flex flex-col h-full shadow-xl z-20 select-none font-sans shrink-0 transition-all duration-300 overflow-hidden ${
+          sidebarCollapsed ? "w-0 opacity-0 pointer-events-none" : "w-72 opacity-100"
+        }`}
+      >
+        <div className="w-72 flex flex-col h-full shrink-0">
+          {/* Info Usuario + Botón Regresar al Inicio */}
+          <div className="px-3.5 py-3 flex items-center justify-between border-b border-slate-700/50 bg-[#1a1d21] gap-2">
           <div className="flex items-center gap-2.5 overflow-hidden">
             <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-white shrink-0 font-bold text-xs">
               {usernameDisplay.slice(0, 2)}
@@ -2728,7 +2748,7 @@ function CoordinatorModule({
                         activeSection === "consultaVersiones" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"
                       }`}
                     >
-                      <span className="truncate block">1. Consultar versión</span>
+                      <span className="truncate block">Consultar versión</span>
                     </button>
                   )}
                   {canAccess("consultaRestauracionDB") && matchesSearch("Consultar restauración BD") && (
@@ -2738,7 +2758,7 @@ function CoordinatorModule({
                         activeSection === "consultaRestauracionDB" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"
                       }`}
                     >
-                      <span className="truncate block">2. Consultar restauración BD</span>
+                      <span className="truncate block">Consultar restauración BD</span>
                     </button>
                   )}
                 </div>
@@ -2746,8 +2766,8 @@ function CoordinatorModule({
             </div>
           )}
 
-          {/* Folder: Parámetros (NUEVO) */}
-          {(canAccess("parametrosEnviosCorreo") || canAccess("parametrosSolicitudes") || canAccess("valoresParametros") || canAccess("versionParametros") || canAccess("parametrosConfig")) && (
+          {/* Folder: Parámetros */}
+          {(canAccess("parametrosCorreos") || canAccess("valoresParametros") || canAccess("parametrosConfig")) && (
             <div className="px-2 py-1 space-y-1">
               <button
                 onClick={() => toggleFolder("parametros")}
@@ -2761,14 +2781,21 @@ function CoordinatorModule({
               </button>
               {openFolders.parametros && (
                 <div className="ml-4 pl-3 border-l border-slate-700/60 space-y-1 my-1">
-                  {(canAccess("parametrosEnviosCorreo") || canAccess("versionParametros")) && matchesSearch("Envios de correos de Version") && (
-                    <button onClick={() => goToSection("parametrosEnviosCorreo")} className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${activeSection === "parametrosEnviosCorreo" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"}`}><span className="truncate block">Envíos de correos de Versión</span></button>
-                  )}
-                  {(canAccess("parametrosSolicitudes") || canAccess("parametrosConfig")) && matchesSearch("Parametros Solicitudes") && (
-                    <button onClick={() => goToSection("parametrosSolicitudes")} className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${activeSection === "parametrosSolicitudes" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"}`}><span className="truncate block">Parámetros Solicitudes</span></button>
+                  {(canAccess("parametrosCorreos") || canAccess("parametrosConfig")) && matchesSearch("Parametros de Correos") && (
+                    <button
+                      onClick={() => goToSection("parametrosCorreos")}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${activeSection === "parametrosCorreos" || activeSection === "parametrosEnviosCorreo" || activeSection === "parametrosSolicitudes" || activeSection === "parametrosCorreosNotificaciones" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"}`}
+                    >
+                      <span className="truncate block">Parámetros de Correos</span>
+                    </button>
                   )}
                   {(canAccess("valoresParametros") || canAccess("parametrosConfig")) && matchesSearch("Valores Parametros") && (
-                    <button onClick={() => goToSection("valoresParametros")} className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${activeSection === "valoresParametros" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"}`}><span className="truncate block">Valores Parámetros</span></button>
+                    <button
+                      onClick={() => goToSection("valoresParametros")}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${activeSection === "valoresParametros" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"}`}
+                    >
+                      <span className="truncate block">Valores Parámetros</span>
+                    </button>
                   )}
                 </div>
               )}
@@ -3038,7 +3065,28 @@ function CoordinatorModule({
             </div>
           )}
         </div>
+        </div>
       </aside>
+
+      {/* Barra separadora con botón para expandir y comprimir el menú lateral */}
+      <div className="relative z-30 flex items-center shrink-0">
+        <div
+          onClick={() => setSidebarCollapsed((prev) => !prev)}
+          className="w-1.5 h-full bg-slate-200 hover:bg-[#0091ea]/60 transition-colors cursor-pointer flex items-center justify-center group"
+          title={sidebarCollapsed ? "Expandir menú lateral" : "Comprimir menú lateral"}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setSidebarCollapsed((prev) => !prev);
+            }}
+            className="absolute flex items-center justify-center w-5 h-12 rounded-r-lg bg-[#212529] hover:bg-[#0091ea] text-slate-300 hover:text-white shadow-md border-y border-r border-slate-600 hover:border-[#0091ea] transition-all cursor-pointer group-hover:scale-105"
+            title={sidebarCollapsed ? "Expandir menú lateral" : "Comprimir menú lateral"}
+          >
+            {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
+        </div>
+      </div>
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-auto p-6 bg-[#f8f9fa]">
@@ -3089,11 +3137,8 @@ function CoordinatorModule({
         {activeSection === "solicitudPassword" && (
           <PasswordResetRequests onError={onError} admin />
         )}
-        {(activeSection === "parametrosEnviosCorreo" || activeSection === "versionParametros") && (
-          <VersionCorreoParametrosSection onError={onError} />
-        )}
-        {activeSection === "parametrosSolicitudes" && (
-          <ParametrosSolicitudesSection onError={onError} />
+        {(activeSection === "parametrosCorreos" || activeSection === "parametrosEnviosCorreo" || activeSection === "parametrosSolicitudes" || activeSection === "parametrosCorreosNotificaciones" || activeSection === "versionParametros") && (
+          <ParametrosCorreosUnifiedSection onError={onError} />
         )}
         {activeSection === "valoresParametros" && (
           <ValoresParametrosSection onError={onError} />
@@ -4138,6 +4183,21 @@ function VersionCorreoParametrosSection({ onError }: { onError: (msg: string) =>
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ParametrosCorreosUnifiedSection({ onError }: { onError: (msg: string) => void }) {
+  return (
+    <div className="space-y-8">
+      {/* 1. Parámetros de Correos de Versiones */}
+      <VersionCorreoParametrosSection onError={onError} />
+
+      {/* 2. Parámetros Solicitudes */}
+      <ParametrosSolicitudesSection onError={onError} />
+
+      {/* 3. Parámetros de Correos de Notificación */}
+      <SolicitudesEmailNotificationsConfig onError={onError} />
     </div>
   );
 }
@@ -6862,12 +6922,23 @@ export default function App() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // Estado de autenticación para Solicitudes de Creación de Usuario
+  const [solicitudUserLoggedIn, setSolicitudUserLoggedIn] = useState(() => !!localStorage.getItem("usuarios_solicitud_token"));
+  const [solicitudUserLogin, setSolicitudUserLogin] = useState({ usuario: "", password: "" });
+  const [solicitudUserLoginError, setSolicitudUserLoginError] = useState("");
+  const [solicitudUserLogging, setSolicitudUserLogging] = useState(false);
+
   function returnToHome() {
     clearAuthenticatedApiUser();
     setCoordinatorLoggedIn(false);
     setLoggedUser("");
     setCoordinatorLogin({ usuario: "", password: "" });
     setCoordinatorLoginError("");
+    // Limpiar sesión de solicitudes de usuario
+    localStorage.removeItem("usuarios_solicitud_token");
+    setSolicitudUserLoggedIn(false);
+    setSolicitudUserLogin({ usuario: "", password: "" });
+    setSolicitudUserLoginError("");
     setModule("home");
   }
 
@@ -6926,13 +6997,11 @@ export default function App() {
     );
   }
 
-  if (module === "creacionUsuario" || module === "restablecimientoPassword") {
-    const esCreacion = module === "creacionUsuario";
-    const titulo = esCreacion ? "Solicitudes de Creación de Usuario" : "Solicitudes de Restablecimiento de Contraseña";
+  if (module === "restablecimientoPassword") {
     return (
       <><Toaster /><div className="h-screen flex flex-col overflow-hidden" style={{ fontFamily: "'Inter', sans-serif" }}>
         <div className="bg-[#0778ac] text-white px-5 h-11 flex items-center justify-between shrink-0 border-b border-[#0778ac]/40">
-          <div className="flex items-center gap-2.5"><Monitor size={16} /><span className="text-sm font-bold">Validación y Solicitudes</span><span className="text-white/60">/</span><span className="text-sm text-white/85">{titulo}</span></div>
+          <div className="flex items-center gap-2.5"><Monitor size={16} /><span className="text-sm font-bold">Validación y Solicitudes</span><span className="text-white/60">/</span><span className="text-sm text-white/85">Solicitudes de Restablecimiento de Contraseña</span></div>
           <button
             onClick={returnToHome}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-all shadow-sm"
@@ -6942,11 +7011,136 @@ export default function App() {
         </div>
         <div className="flex-1 overflow-auto bg-[#f8f9fa] p-6">
           {error && <div className="mb-6 rounded-lg border border-[#d43a39]/20 bg-[#d43a39]/10 p-3 text-sm text-[#d43a39]">{error}</div>}
-          {esCreacion ? <UserCreationRequests onError={setError} /> : <PasswordResetRequests onError={setError} />}
+          <PasswordResetRequests onError={setError} />
         </div>
       </div></>
     );
   }
+
+  if (module === "creacionUsuario") {
+    // ── Pantalla de inicio de sesión ───────────────────────────────────────
+    if (!solicitudUserLoggedIn) {
+      const handleSolicitudLogin = async () => {
+        const user = solicitudUserLogin.usuario.trim();
+        const pass = solicitudUserLogin.password;
+        if (!user || !pass) {
+          setSolicitudUserLoginError("Ingrese usuario y contraseña.");
+          return;
+        }
+        setSolicitudUserLogging(true);
+        setSolicitudUserLoginError("");
+        try {
+          const apiBase = (import.meta as any).env?.VITE_API_BASE_URL || "/api/v1";
+          const res = await fetch(`${apiBase}/auth/usuarios-solicitud/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ identificador: user, nombre_usuario: user, password: pass }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            setSolicitudUserLoginError(data?.detail || "Usuario o contraseña incorrectos.");
+            return;
+          }
+          const data = await res.json();
+          const token: string = data.access_token || data.token || "";
+          if (!token) {
+            setSolicitudUserLoginError("No se recibió token de sesión.");
+            return;
+          }
+          localStorage.setItem("usuarios_solicitud_token", token);
+          setSolicitudUserLoggedIn(true);
+          setSolicitudUserLogin({ usuario: "", password: "" });
+        } catch {
+          setSolicitudUserLoginError("No fue posible conectar con el servidor.");
+        } finally {
+          setSolicitudUserLogging(false);
+        }
+      };
+
+      return (
+        <><Toaster /><div className="min-h-screen bg-[#f8f9fa] flex flex-col items-center justify-center p-8 text-slate-900">
+          <div className="w-full max-w-md rounded-3xl border border-[#0778ac]/20 bg-white p-8 shadow-xl">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 bg-[#0778ac]/10 border border-[#0778ac]/20 rounded-2xl flex items-center justify-center">
+                <UserPlus size={20} className="text-[#0778ac]" />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold text-[#0778ac]">Solicitudes de Creación de Usuario</h1>
+                <p className="text-xs text-slate-400 font-medium">Inicio de sesión requerido</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600 mb-6 mt-3">
+              Ingrese con su usuario y contraseña para acceder al módulo de solicitudes.
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-2">Usuario</label>
+                <input
+                  value={solicitudUserLogin.usuario}
+                  onChange={(e) => setSolicitudUserLogin((f) => ({ ...f, usuario: e.target.value }))}
+                  onKeyDown={(e) => e.key === "Enter" && handleSolicitudLogin()}
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0778ac]/40"
+                  autoComplete="username"
+                  placeholder="ej: juan.perez"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-2">Contraseña</label>
+                <input
+                  type="password"
+                  value={solicitudUserLogin.password}
+                  onChange={(e) => setSolicitudUserLogin((f) => ({ ...f, password: e.target.value }))}
+                  onKeyDown={(e) => e.key === "Enter" && handleSolicitudLogin()}
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0778ac]/40"
+                  autoComplete="current-password"
+                />
+              </div>
+              {solicitudUserLoginError && (
+                <div className="rounded-2xl bg-[#d43a39]/10 border border-[#d43a39]/20 px-4 py-3 text-sm text-[#d43a39]/80">
+                  {solicitudUserLoginError}
+                </div>
+              )}
+              <div className="flex justify-between items-center gap-3 pt-2">
+                <button
+                  onClick={() => setModule("home")}
+                  className="rounded-2xl border border-slate-300 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  Volver
+                </button>
+                <button
+                  onClick={handleSolicitudLogin}
+                  disabled={solicitudUserLogging}
+                  className="rounded-2xl bg-[#0778ac] px-5 py-3 text-sm font-semibold text-white hover:bg-[#056b95] disabled:opacity-60 transition-colors"
+                >
+                  {solicitudUserLogging ? "Ingresando..." : "Iniciar sesión"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div></>
+      );
+    }
+
+    // ── Módulo (ya autenticado) ────────────────────────────────────────────
+    return (
+      <><Toaster /><div className="h-screen flex flex-col overflow-hidden" style={{ fontFamily: "'Inter', sans-serif" }}>
+        <div className="bg-[#0778ac] text-white px-5 h-11 flex items-center justify-between shrink-0 border-b border-[#0778ac]/40">
+          <div className="flex items-center gap-2.5"><Monitor size={16} /><span className="text-sm font-bold">Validación y Solicitudes</span><span className="text-white/60">/</span><span className="text-sm text-white/85">Solicitudes de Creación de Usuario</span></div>
+          <button
+            onClick={returnToHome}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-all shadow-sm"
+          >
+            <Home size={13} /> Regresar al Inicio
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto bg-[#f8f9fa] p-6">
+          {error && <div className="mb-6 rounded-lg border border-[#d43a39]/20 bg-[#d43a39]/10 p-3 text-sm text-[#d43a39]">{error}</div>}
+          <UserCreationRequests onError={setError} />
+        </div>
+      </div></>
+    );
+  }
+
 
   if (module === "coordinator" && !coordinatorLoggedIn) {
     return (

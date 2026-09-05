@@ -106,7 +106,12 @@ def resolve_upload_path(relative_url: str | None) -> str | None:
     return abs_path if os.path.isfile(abs_path) else None
 
 
-def email_html(title: str, items: list[tuple[str, str]], has_custom_signature: bool = False) -> str:
+def email_html(
+    title: str,
+    items: list[tuple[str, str]],
+    has_custom_signature: bool = False,
+    include_signature: bool = True,
+) -> str:
     rows_html = []
     for item in items:
         if isinstance(item, tuple) and len(item) == 2:
@@ -121,15 +126,17 @@ def email_html(title: str, items: list[tuple[str, str]], has_custom_signature: b
                     f"<td style='padding:8px 10px;border-bottom:1px solid #eee;color:#444;'>{html.escape(str(val))}</td></tr>"
                 )
 
-    sig_html = build_signature_html()
-    if has_custom_signature:
+    if not include_signature:
+        sig_html = ""
+    elif has_custom_signature:
         sig_html = (
             f"<div style='margin-top:20px;padding-top:15px;border-top:1px dashed #cccccc;'>"
             f"<p style='font-size:11px;color:#7f8c8d;margin-bottom:8px;font-weight:bold;text-transform:uppercase;'>Firma Adjunta de la Solicitud / Notificación:</p>"
             f"<img src='cid:firma_custom' style='max-height:140px;max-width:100%;object-fit:contain;' alt='Firma' />"
             f"</div>"
-            + sig_html
         )
+    else:
+        sig_html = build_signature_html()
 
     return (
         f"<div style='font-family:Segoe UI,Arial,sans-serif;border:1px solid #d6dbdf;border-radius:8px;max-width:650px;margin:0 auto;overflow:hidden;background:#ffffff;'>"
@@ -226,7 +233,7 @@ async def create_user(
     direccion: str = Form(...),
     cargo: str = Form(...),
     nombre_usuario: str = Form(...),
-    firma: UploadFile = File(...),
+    firma: UploadFile | None = File(None),
     plataforma_otros_nombre: str | None = Form(None),
     db: Session = Depends(get_db),
     current_usuario = Depends(get_optional_usuario_solicitud),
@@ -245,10 +252,7 @@ async def create_user(
         allowed_names = set()
         if allowed_ids:
             allowed_names = {p.nombre for p in db.query(PlataformaSolicitudAcceso).filter(PlataformaSolicitudAcceso.oid.in_(allowed_ids)).all()}
-            allowed_names.add("Otros")
-        else:
-            # si no tiene permisos asignados, no puede crear nada
-            raise HTTPException(403, "No tiene permisos para crear usuarios en ninguna plataforma")
+        allowed_names.add("Otros")
         invalid = [t for t in selected if t not in allowed_names]
         if invalid:
             raise HTTPException(403, f"No tiene permiso para la plataforma: {', '.join(invalid)}")
@@ -264,14 +268,25 @@ async def create_user(
         raise HTTPException(422, "Debe indicar el nombre de la plataforma para 'Otros'")
     if "Otros" not in selected and otros_nombre:
         otros_nombre = ""  # ignorar si no selecciona Otros
-    signature(firma)
+
+    firma_url = None
+    if firma is not None and firma.filename:
+        signature(firma)
+        firma_url = await save_upload_file(firma)
+    elif current_usuario and current_usuario.firma_url:
+        firma_url = current_usuario.firma_url
+    else:
+        raise HTTPException(422, "La firma es obligatoria. No se encontró firma registrada ni archivo adjunto.")
+
+    final_solicitante = (current_usuario.nombre_completo or current_usuario.nombre_usuario) if current_usuario else solicitante
+    final_area = (current_usuario.cargo if current_usuario and current_usuario.cargo else area)
 
     item = SolicitudCreacionUsuario(
         consecutivo=next_id(db, SolicitudCreacionUsuario, "USR"),
         tipo=selected[0],
         tipos=selected,
-        solicitante=required("Solicitante", solicitante),
-        area=required("Área", area),
+        solicitante=required("Solicitante", final_solicitante),
+        area=required("Cargo", final_area),
         primer_nombre=required("Primer nombre", primer_nombre),
         segundo_nombre=segundo_nombre.strip() if segundo_nombre else None,
         primer_apellido=required("Primer apellido", primer_apellido),
@@ -280,9 +295,9 @@ async def create_user(
         telefono=required("Teléfono", telefono),
         correo=required("Correo", correo),
         direccion=required("Dirección", direccion),
-        cargo=required("Cargo", cargo),
+        cargo=required("Cargo laboral", cargo),
         nombre_usuario=required("Nombre de usuario", nombre_usuario),
-        firma_url=await save_upload_file(firma),
+        firma_url=firma_url,
         plataforma_otros_nombre=otros_nombre if otros_nombre else None,
         estado="Pendiente por creación",
         fecha_registro=datetime.utcnow(),
@@ -292,19 +307,20 @@ async def create_user(
     db.refresh(item)
 
     conf = db.query(ConfiguracionSolicitudesAcceso).first()
-    dest_emails = list(
-        dict.fromkeys(
-            recipients(conf.correos_creacion if conf else "")
-            + ([item.correo.strip()] if item.correo else [])
-        )
-    )
+    dest_emails = recipients(conf.correos_creacion if conf else "")
+
+    sender_email = None
+    sender_name = None
+    if current_usuario and current_usuario.correo_institucional:
+        sender_email = current_usuario.correo_institucional.strip()
+        sender_name = current_usuario.nombre_completo or current_usuario.nombre_usuario
 
     full_name = f"{item.primer_nombre} {item.segundo_nombre or ''} {item.primer_apellido} {item.segundo_apellido}".replace("  ", " ").strip()
 
     email_rows = [
         ("Consecutivo", item.consecutivo),
         ("Solicitante", item.solicitante),
-        ("Área", item.area),
+        ("Cargo", item.area),
         ("SUBTITLE", "Detalles del empleado:"),
         ("Tipos de plataformas", ", ".join(selected)),
         ("Nombre de Usuario", item.nombre_usuario),
@@ -313,7 +329,7 @@ async def create_user(
         ("Teléfono", item.telefono),
         ("Dirección", item.direccion),
         ("Correo", item.correo),
-        ("Cargo", item.cargo),
+        ("Cargo laboral", item.cargo),
         ("Estado", item.estado),
     ]
 
@@ -328,9 +344,16 @@ async def create_user(
                 is_html=True,
                 mailer_config=mail_config(),
                 custom_signature_path=custom_sig,
+                include_inline_signature=not bool(custom_sig),
+                from_email=sender_email,
+                from_name=sender_name,
+                reply_to=sender_email,
             )
+            logger.info("Correo de creación de usuario (%s) enviado desde %s hacia %s", item.consecutivo, sender_email or "default SMTP", dest_emails)
         except Exception as e:
             logger.error("Error enviando correo de creación de usuario (%s): %s", item.consecutivo, e, exc_info=True)
+    else:
+        logger.warning("No hay correos parametrizados en 'Correos - Creación de Usuario' para la solicitud %s", item.consecutivo)
 
     return item
 
@@ -412,6 +435,7 @@ async def user_created(
             is_html=True,
             mailer_config=mail_config(),
             custom_signature_path=custom_sig,
+            include_inline_signature=not bool(custom_sig),
         )
     except Exception as exc:
         logger.error("Error enviando correo de usuario creado (%s): %s", item.consecutivo, exc, exc_info=True)
@@ -477,10 +501,15 @@ def reset_request(
         try:
             send_email(
                 subject=f"Nueva solicitud de restablecimiento de contraseña ({item.consecutivo})",
-                body=email_html("Nueva solicitud de restablecimiento de contraseña", email_rows),
+                body=email_html(
+                    "Nueva solicitud de restablecimiento de contraseña",
+                    email_rows,
+                    include_signature=False,
+                ),
                 recipients=all_to,
                 is_html=True,
                 mailer_config=mail_config(),
+                include_inline_signature=False,
             )
         except Exception as exc:
             logger.error("Error enviando correo de restablecimiento (%s): %s", item.consecutivo, exc, exc_info=True)
@@ -537,6 +566,7 @@ async def notify_reset(
             is_html=True,
             mailer_config=mail_config(),
             custom_signature_path=custom_sig,
+            include_inline_signature=not bool(custom_sig),
         )
     except Exception as exc:
         logger.error("Error enviando correo de restablecimiento notificado (%s): %s", item.consecutivo, exc, exc_info=True)

@@ -129,6 +129,14 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
   const [otrosNombre, setOtrosNombre] = useState("");
   const [allowedPlatforms, setAllowedPlatforms] = useState<string[] | null>(null);
   const [firmaPreview, setFirmaPreview] = useState("");
+  const [currentUser, setCurrentUser] = useState<{
+    id: number;
+    nombre_completo: string;
+    nombre_usuario: string;
+    correo_institucional: string;
+    cargo: string;
+    firma_url: string;
+  } | null>(null);
 
   const firstName = form.primer_nombre.trim().split(/\s+/)[0] || "";
   const firstSurname = form.primer_apellido.trim().split(/\s+/)[0] || "";
@@ -136,19 +144,51 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
   const set = (key: keyof typeof userInitial, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
   const getUsuarioSolicitudToken = () => {
-    if(typeof window==="undefined") return null;
+    if (typeof window === "undefined") return null;
     return localStorage.getItem("usuarios_solicitud_token");
   };
+
+  const applyUserData = (userData: any) => {
+    setCurrentUser(userData);
+    setForm((prev) => ({
+      ...prev,
+      solicitante: userData.nombre_completo || userData.nombre_usuario || prev.solicitante,
+      area: userData.cargo || prev.area,
+    }));
+    if (userData.firma_url) {
+      const cleanUrl = userData.firma_url.startsWith("/") ? userData.firma_url : `/${userData.firma_url}`;
+      setFirmaPreview(cleanUrl);
+    }
+  };
+
   const loadData = () => {
     api<UserRequest[]>("/solicitudes-accesos/creacion-usuarios").then(setItems).catch(() => {});
     api<Platform[]>("/solicitudes-accesos/plataformas?modulo=creacion_usuario&solo_activas=true")
       .then((rows) => setPlatforms(rows.map((row) => row.nombre)))
       .catch(() => setPlatforms([]));
     const token = getUsuarioSolicitudToken();
-    if(token){
-      fetch(`${import.meta.env.VITE_API_BASE_URL || "/api/v1"}/auth/usuarios-solicitud/me/permisos`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.ok?r.json():null).then((data)=>{
-        if(data?.plataformas){ setAllowedPlatforms(data.plataformas); }
-      }).catch(()=>{});
+    if (token) {
+      fetch(`${import.meta.env.VITE_API_BASE_URL || "/api/v1"}/auth/usuarios-solicitud/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((userData) => {
+          if (userData) {
+            applyUserData(userData);
+          }
+        })
+        .catch(() => {});
+
+      fetch(`${import.meta.env.VITE_API_BASE_URL || "/api/v1"}/auth/usuarios-solicitud/me/permisos`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.plataformas) {
+            setAllowedPlatforms(data.plataformas);
+          }
+        })
+        .catch(() => {});
     } else {
       setAllowedPlatforms(null);
     }
@@ -158,25 +198,48 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
     loadData();
   }, []);
 
+  const handleOpenModal = () => {
+    setForm({
+      ...userInitial,
+      solicitante: currentUser?.nombre_completo || currentUser?.nombre_usuario || "",
+      area: currentUser?.cargo || "",
+    });
+    setSelectedTypes([]);
+    setOtrosNombre("");
+    setFirma(null);
+    if (currentUser?.firma_url) {
+      const cleanUrl = currentUser.firma_url.startsWith("/") ? currentUser.firma_url : `/${currentUser.firma_url}`;
+      setFirmaPreview(cleanUrl);
+    } else {
+      setFirmaPreview("");
+    }
+    setOpen(true);
+  };
+
   const handleFirmaChange = (file: File | null) => {
     setFirma(file);
-    if (firmaPreview) URL.revokeObjectURL(firmaPreview);
+    if (firmaPreview && !currentUser?.firma_url) URL.revokeObjectURL(firmaPreview);
     setFirmaPreview(file ? URL.createObjectURL(file) : "");
   };
 
-  const visiblePlatforms = allowedPlatforms ? platforms.filter((p)=> allowedPlatforms.includes(p)) : platforms;
+  const visiblePlatforms = allowedPlatforms ? platforms.filter((p) => allowedPlatforms.includes(p)) : platforms;
   const displayPlatforms = [...visiblePlatforms, "Otros"];
 
   const save = () => {
-    if (Object.entries(form).some(([key, value]) => key !== "segundo_nombre" && !value.trim()) || !firma || selectedTypes.length === 0) {
-      onError("Complete todos los campos obligatorios y adjunte la firma.");
+    const hasSignature = Boolean(firma) || Boolean(currentUser?.firma_url) || Boolean(firmaPreview);
+    if (
+      Object.entries(form).some(([key, value]) => key !== "segundo_nombre" && !value.trim()) ||
+      !hasSignature ||
+      selectedTypes.length === 0
+    ) {
+      onError("Complete todos los campos obligatorios y verifique la firma.");
       return;
     }
     if (selectedTypes.includes("Otros") && !otrosNombre.trim()) {
       onError("Debe indicar el nombre de la plataforma para 'Otros'.");
       return;
     }
-    if (!["image/jpeg", "image/png"].includes(firma.type)) {
+    if (firma && !["image/jpeg", "image/png"].includes(firma.type)) {
       onError("La firma debe estar en formato JPG o PNG.");
       return;
     }
@@ -185,21 +248,31 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
     Object.entries(form).forEach(([key, value]) => data.append(key, value.trim()));
     data.append("tipos", JSON.stringify(finalTipos));
     data.append("nombre_usuario", nombreUsuario);
-    data.append("firma", firma);
-    if(finalTipos.includes("Otros")) data.append("plataforma_otros_nombre", otrosNombre.trim());
+    if (firma) {
+      data.append("firma", firma);
+    }
+    if (finalTipos.includes("Otros")) data.append("plataforma_otros_nombre", otrosNombre.trim());
     setSaving(true);
     const token = getUsuarioSolicitudToken();
-    const headers: Record<string,string> = {};
-    if(token) headers["Authorization"] = `Bearer ${token}`;
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
     api<UserRequest>("/solicitudes-accesos/creacion-usuarios", { method: "POST", body: data, headers } as any)
       .then((created) => {
         setItems((current) => [created, ...current]);
-        setForm(userInitial);
+        setForm({
+          ...userInitial,
+          solicitante: currentUser?.nombre_completo || currentUser?.nombre_usuario || "",
+          area: currentUser?.cargo || "",
+        });
         setSelectedTypes([]);
         setOtrosNombre("");
         setFirma(null);
-        if (firmaPreview) URL.revokeObjectURL(firmaPreview);
-        setFirmaPreview("");
+        if (currentUser?.firma_url) {
+          const cleanUrl = currentUser.firma_url.startsWith("/") ? currentUser.firma_url : `/${currentUser.firma_url}`;
+          setFirmaPreview(cleanUrl);
+        } else {
+          setFirmaPreview("");
+        }
         setOpen(false);
         toast.success("Solicitud de creación registrada.");
       })
@@ -224,7 +297,7 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <SectionHeader title="Solicitudes de Creación de Usuario" subtitle="Registre y consulte las solicitudes de nuevas cuentas." />
-        <Btn onClick={() => setOpen(true)}>
+        <Btn onClick={handleOpenModal}>
           <Plus size={14} /> Solicitud de Creación
         </Btn>
       </div>
@@ -258,7 +331,7 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
       </div>
 
       <RequestTable
-        headings={[...["Consecutivo", "Tipo", "Solicitante", "Área", "Nombre de usuario", "Fecha", "Estado"], ...(admin ? ["Acciones"] : [])]}
+        headings={[...["Consecutivo", "Tipo", "Solicitante", "Cargo", "Nombre de usuario", "Fecha", "Estado"], ...(admin ? ["Acciones"] : [])]}
         empty={items.length === 0}
       >
         {items.map((item) => (
@@ -285,7 +358,11 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2 space-y-2">
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">¿En qué módulo(s) van a crear al empleado? *</label>
-            {allowedPlatforms !== null && <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">Mostrando solo plataformas permitidas para tu usuario. Para más accesos contacta al Administrador en Generales &gt; Usuarios &gt; Permisos.</p>}
+            {allowedPlatforms !== null && (
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                Mostrando solo plataformas permitidas para tu usuario. Para más accesos contacta al Administrador en Generales &gt; Usuarios &gt; Permisos.
+              </p>
+            )}
             <div className="flex flex-wrap gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
               {displayPlatforms.length > 0 ? (
                 displayPlatforms.map((name) => (
@@ -298,7 +375,7 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
                       }
                       className="rounded border-slate-300 text-[#0778ac] focus:ring-[#0778ac]"
                     />
-                    {name} {name==="Otros" && <span className="text-[10px] bg-slate-200 px-1.5 py-0.5 rounded">Otro</span>}
+                    {name} {name === "Otros" && <span className="text-[10px] bg-slate-200 px-1.5 py-0.5 rounded">Otro</span>}
                   </label>
                 ))
               ) : (
@@ -308,19 +385,38 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
             {selectedTypes.includes("Otros") && (
               <div className="mt-2">
                 <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Nombre de la plataforma para &quot;Otros&quot; *</label>
-                <input value={otrosNombre} onChange={(e)=>setOtrosNombre(e.target.value)} placeholder="Ingrese el nombre de la plataforma" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]" />
+                <input
+                  value={otrosNombre}
+                  onChange={(e) => setOtrosNombre(e.target.value)}
+                  placeholder="Ingrese el nombre de la plataforma"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+                />
               </div>
             )}
             {selectedTypes.includes("Todos") && (
               <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-800 text-xs font-medium animate-fadeIn">
                 <Info size={16} className="shrink-0 text-blue-600" />
-                <span>Al seleccionar la opción <strong>"Todos"</strong>, se informa que se deberá crear la cuenta del empleado para <strong>todos los módulos informados y disponibles</strong>.</span>
+                <span>
+                  Al seleccionar la opción <strong>&quot;Todos&quot;</strong>, se informa que se deberá crear la cuenta del empleado para <strong>todos los módulos informados y disponibles</strong>.
+                </span>
               </div>
             )}
           </div>
 
-          <FormInput label="Solicitante" required value={form.solicitante} onChange={(event) => set("solicitante", event.target.value)} />
-          <FormInput label="Área" required value={form.area} onChange={(event) => set("area", event.target.value)} />
+          <FormInput
+            label="Solicitante"
+            required
+            value={form.solicitante}
+            readOnly
+            title="Dato tomado automáticamente del perfil del usuario (Inmodificable)"
+          />
+          <FormInput
+            label="Cargo"
+            required
+            value={form.area}
+            readOnly
+            title="Dato tomado automáticamente del perfil del usuario (Inmodificable)"
+          />
           <FormInput label="Primer nombre" required value={form.primer_nombre} onChange={(event) => set("primer_nombre", event.target.value)} />
           <FormInput label="Segundo nombre" value={form.segundo_nombre} onChange={(event) => set("segundo_nombre", event.target.value)} />
           <FormInput label="Primer apellido" required value={form.primer_apellido} onChange={(event) => set("primer_apellido", event.target.value)} />
@@ -332,22 +428,34 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
           <FormInput label="Cargo laboral" required value={form.cargo} onChange={(event) => set("cargo", event.target.value)} />
           <FormInput label="Nombre de usuario" required value={nombreUsuario} readOnly />
 
-          {/* Campo de Firma con previa visualización */}
+          {/* Campo de Firma */}
           <div className="md:col-span-2 flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Firma (Imagen .JPG / .PNG) *</label>
-            <div className="border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center justify-center bg-slate-50 min-h-[120px] transition-all hover:bg-slate-100/80">
+            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+              Firma del Solicitante {currentUser?.firma_url ? "(Registrada en el perfil - Inmodificable)" : "*"}
+            </label>
+            <div className="border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center justify-center bg-slate-50 min-h-[120px] transition-all">
               {firmaPreview ? (
                 <div className="flex flex-col items-center gap-2 w-full">
-                  <img src={firmaPreview} alt="Vista previa de la firma" className="max-h-28 max-w-full object-contain rounded border border-slate-200 shadow-sm bg-white p-1" />
-                  <label className="text-xs font-semibold text-[#0778ac] hover:underline cursor-pointer">
-                    Cambiar firma
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,.jpg,.jpeg,.png"
-                      onChange={(e) => handleFirmaChange(e.target.files?.[0] ?? null)}
-                      className="hidden"
-                    />
-                  </label>
+                  <img
+                    src={firmaPreview}
+                    alt="Firma del solicitante"
+                    className="max-h-28 max-w-full object-contain rounded border border-slate-200 shadow-sm bg-white p-1"
+                  />
+                  {currentUser?.firma_url ? (
+                    <span className="text-[11px] font-medium text-slate-500 bg-slate-200/80 px-3 py-1 rounded-full">
+                      Firma inmodificable vinculada al usuario
+                    </span>
+                  ) : (
+                    <label className="text-xs font-semibold text-[#0778ac] hover:underline cursor-pointer">
+                      Cambiar firma
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                        onChange={(e) => handleFirmaChange(e.target.files?.[0] ?? null)}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
                 </div>
               ) : (
                 <label className="cursor-pointer flex flex-col items-center gap-2 text-slate-500 hover:text-slate-700 w-full py-4">
@@ -931,7 +1039,6 @@ function AdminPasswordActions({ item, refresh, onError }: { item: PasswordReques
 export function AccessPlatformsConfig({ onError }: { onError: (message: string) => void }) {
   const [items, setItems] = useState<Platform[]>([]);
   const [form, setForm] = useState({ nombre: "", modulos: ["creacion_usuario"] });
-  const [emails, setEmails] = useState({ correos_creacion: "", correos_restablecimiento: "" });
 
   // Modal para editar plataforma
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -939,7 +1046,6 @@ export function AccessPlatformsConfig({ onError }: { onError: (message: string) 
 
   const load = () => {
     api<Platform[]>("/solicitudes-accesos/plataformas").then(setItems).catch((error) => onError(error.message));
-    api<typeof emails>("/solicitudes-accesos/configuracion").then(setEmails).catch(() => {});
   };
 
   useEffect(() => {
@@ -1043,11 +1149,6 @@ export function AccessPlatformsConfig({ onError }: { onError: (message: string) 
       .catch((error) => onError(error.message));
   };
 
-  const saveEmails = () =>
-    api("/solicitudes-accesos/configuracion", { method: "PUT", body: JSON.stringify(emails) })
-      .then(() => toast.success("Correos de notificación guardados."))
-      .catch((error) => onError(error.message));
-
   const grouped = Object.values(
     items.reduce<Record<string, { nombre: string; rows: Platform[] }>>((result, item) => {
       (result[item.nombre] ||= { nombre: item.nombre, rows: [] }).rows.push(item);
@@ -1056,8 +1157,8 @@ export function AccessPlatformsConfig({ onError }: { onError: (message: string) 
   );
 
   return (
-    <div className="space-y-6 mt-8">
-      <SectionHeader title="Plataformas y notificaciones de solicitudes" subtitle="Registre un nombre de plataforma y asígnelo a uno o ambos módulos." />
+    <div className="space-y-6">
+      <SectionHeader title="Plataformas de Solicitudes" subtitle="Registre un nombre de plataforma y asígnelo a uno o ambos módulos." />
 
       {/* Agregar Nueva Plataforma */}
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1130,46 +1231,6 @@ export function AccessPlatformsConfig({ onError }: { onError: (message: string) 
         </div>
       </div>
 
-      {/* Rediseño: Correos de aviso al registrar solicitudes (Estilo como Correos por Tipo de Parámetro) */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
-        <div className="flex items-start gap-3">
-          <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl border border-purple-100">
-            <Mail size={20} />
-          </div>
-          <div>
-            <h3 className="font-semibold text-slate-900 text-base">Correos Electrónicos de Notificación de Solicitudes</h3>
-            <p className="text-xs text-slate-500">Ingrese las direcciones de correo separadas por coma o punto y coma para cada tipo de solicitud.</p>
-          </div>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">CORREOS - CREACIÓN DE USUARIO</label>
-            <FormTextarea
-              rows={3}
-              value={emails.correos_creacion}
-              onChange={(event) => setEmails((current) => ({ ...current, correos_creacion: event.target.value }))}
-              placeholder="asistente.ingenieria@icvc.co, soporte@icvc.co"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">CORREOS - RESTABLECIMIENTO DE CONTRASEÑA</label>
-            <FormTextarea
-              rows={3}
-              value={emails.correos_restablecimiento}
-              onChange={(event) => setEmails((current) => ({ ...current, correos_restablecimiento: event.target.value }))}
-              placeholder="asistente.ingenieria@icvc.co, soporte@icvc.co"
-            />
-          </div>
-        </div>
-
-        <div className="flex justify-end pt-2">
-          <Btn onClick={saveEmails} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-6 py-2.5 shadow-sm">
-            Guardar Correos de Notificación
-          </Btn>
-        </div>
-      </div>
-
       {/* Modal Editar Plataforma */}
       <Modal open={editModalOpen} onClose={() => setEditModalOpen(false)} title="Editar Plataforma">
         {editingPlatform && (
@@ -1213,6 +1274,80 @@ export function AccessPlatformsConfig({ onError }: { onError: (message: string) 
           </div>
         )}
       </Modal>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// Configuración de Correos de Notificación de Solicitudes (Creación de Usuario y Restablecimiento)
+// ----------------------------------------------------------------------
+export function SolicitudesEmailNotificationsConfig({ onError }: { onError: (message: string) => void }) {
+  const [emails, setEmails] = useState({ correos_creacion: "", correos_restablecimiento: "" });
+  const [saving, setSaving] = useState(false);
+
+  const load = () => {
+    api<typeof emails>("/solicitudes-accesos/configuracion")
+      .then(setEmails)
+      .catch((error) => onError(error.message));
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const saveEmails = () => {
+    setSaving(true);
+    api("/solicitudes-accesos/configuracion", { method: "PUT", body: JSON.stringify(emails) })
+      .then(() => toast.success("Correos de notificación guardados correctamente."))
+      .catch((error) => onError(error.message))
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader
+        title="Parámetros de Correos de Notificación"
+        subtitle="Configure los destinatarios para las notificaciones de solicitudes de creación de usuario y restablecimiento de contraseña."
+      />
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+        <div className="flex items-start gap-3">
+          <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl border border-purple-100">
+            <Mail size={20} />
+          </div>
+          <div>
+            <h3 className="font-semibold text-slate-900 text-base">Correos Electrónicos de Notificación de Solicitudes</h3>
+            <p className="text-xs text-slate-500">Ingrese las direcciones de correo separadas por coma o punto y coma para cada tipo de solicitud.</p>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">CORREOS - CREACIÓN DE USUARIO</label>
+            <FormTextarea
+              rows={3}
+              value={emails.correos_creacion}
+              onChange={(event) => setEmails((current) => ({ ...current, correos_creacion: event.target.value }))}
+              placeholder="asistente.ingenieria@icvc.co, soporte@icvc.co"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">CORREOS - RESTABLECIMIENTO DE CONTRASEÑA</label>
+            <FormTextarea
+              rows={3}
+              value={emails.correos_restablecimiento}
+              onChange={(event) => setEmails((current) => ({ ...current, correos_restablecimiento: event.target.value }))}
+              placeholder="asistente.ingenieria@icvc.co, soporte@icvc.co"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <Btn onClick={saveEmails} disabled={saving} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-6 py-2.5 shadow-sm">
+            {saving ? "Guardando..." : "Guardar Correos de Notificación"}
+          </Btn>
+        </div>
+      </div>
     </div>
   );
 }

@@ -48,7 +48,9 @@ class UsuarioCreateResponse(UsuarioSolicitudDTO):
 
 
 class LoginRequest(BaseModel):
-    identificador: str  # correo_institucional o nombre_usuario
+    identificador: Optional[str] = None  # correo_institucional o nombre_usuario
+    nombre_usuario: Optional[str] = None
+    correo: Optional[str] = None
     password: str
 
 
@@ -262,7 +264,9 @@ def update_permisos(uid: int, data: PermisosUpdate, db: Session = Depends(get_db
 
 @router.post("/auth/usuarios-solicitud/login", response_model=LoginResponse)
 def login(data: LoginRequest, db: Session = Depends(get_db)):
-    ident = data.identificador.strip().lower()
+    ident = (data.identificador or data.nombre_usuario or data.correo or "").strip().lower()
+    if not ident:
+        raise HTTPException(status_code=422, detail="Debe ingresar usuario o correo institucional")
     # buscar por correo o nombre_usuario
     user = db.query(UsuarioSolicitud).filter(
         (UsuarioSolicitud.correo_institucional == ident) | (UsuarioSolicitud.nombre_usuario == ident)
