@@ -1,13 +1,14 @@
 import { useState } from "react";
 import type React from "react";
-import { ClipboardList, FileText, BookOpen } from "lucide-react";
+import { ClipboardList, FileText, BookOpen, Database } from "lucide-react";
 import { Boletines } from "@/features/boletines/components/Boletines";
 import { ManualesUsuarios } from "@/features/manuales/components/Manuales";
+import { ConsultarRestauracionDBSection } from "@/features/versions/components/ConsultarRestauracionDBSection";
 import { ValidationRegistration } from "./ValidationRegistration";
 import type { Version } from "@/types/version";
 import type { Observacion } from "@/types/observacion";
 
-type ValidatorTab = "registro" | "boletines" | "manuales";
+type ValidatorTab = "registro" | "boletines" | "manuales" | "restauraciones";
 
 export function ValidatorModule({
   versions, observaciones, setObservaciones, onError,
@@ -23,6 +24,7 @@ export function ValidatorModule({
     { key: "registro", label: "Registro de Validación", icon: <ClipboardList size={14} /> },
     { key: "boletines", label: "Boletines técnicos", icon: <FileText size={14} /> },
     { key: "manuales", label: "Manuales de Usuarios", icon: <BookOpen size={14} /> },
+    { key: "restauraciones", label: "Consulta de Restauración de Base de Datos", icon: <Database size={14} /> },
   ];
 
   return (
@@ -57,6 +59,7 @@ export function ValidatorModule({
         )}
         {tab === "boletines" && <Boletines canUpload={false} />}
         {tab === "manuales" && <ManualesUsuarios canUpload={false} />}
+        {tab === "restauraciones" && <ConsultarRestauracionDBSection versions={versions} onError={onError} canDelete={false} />}
       </div>
     </div>
   );

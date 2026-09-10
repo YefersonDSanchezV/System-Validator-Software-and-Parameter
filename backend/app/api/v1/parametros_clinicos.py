@@ -38,6 +38,9 @@ class HabilitarParametroRequest(BaseModel):
     observacion: str = Field(..., min_length=5)
     ingreso: Optional[str] = None # opcional para el mensaje
 
+from app.models.solicitud_parametro import ConfiguracionParametros, ConfiguracionModulosInicio
+from app.schemas.solicitud_parametro import ConfiguracionModulosInicioDTO
+
 class ConfiguracionParametrosDTO(BaseModel):
     hc_default: int
     enf_hcrenf_default: int
@@ -45,6 +48,7 @@ class ConfiguracionParametrosDTO(BaseModel):
     hora_restablecimiento: str
     auto_restablecer: bool
     tipos_habilitados: List[str]
+    tiempo_maximo_contador: Optional[str] = "12:00"
     correos_historia_clinica: Optional[str] = ""
     correos_enfermeria: Optional[str] = ""
     correos_otros: Optional[str] = ""
@@ -99,6 +103,7 @@ def get_config(db: Session = Depends(get_db)):
             hora_restablecimiento="20:05",
             auto_restablecer=True,
             tipos_habilitados=["Historia Clinica", "Enfermeria", "Otros"],
+            tiempo_maximo_contador="12:00",
             correos_historia_clinica="",
             correos_enfermeria="",
             correos_otros="",
@@ -115,6 +120,7 @@ def get_config(db: Session = Depends(get_db)):
         "hora_restablecimiento": conf.hora_restablecimiento,
         "auto_restablecer": conf.auto_restablecer,
         "tipos_habilitados": conf.tipos_habilitados or ["Historia Clinica", "Enfermeria", "Otros"],
+        "tiempo_maximo_contador": getattr(conf, "tiempo_maximo_contador", "12:00") or "12:00",
         "correos_historia_clinica": conf.correos_historia_clinica or "",
         "correos_enfermeria": conf.correos_enfermeria or "",
         "correos_otros": conf.correos_otros or "",
@@ -133,6 +139,8 @@ def update_config(data: ConfiguracionParametrosDTO, db: Session = Depends(get_db
     conf.hora_restablecimiento = data.hora_restablecimiento
     conf.auto_restablecer = data.auto_restablecer
     conf.tipos_habilitados = data.tipos_habilitados
+    if data.tiempo_maximo_contador:
+        conf.tiempo_maximo_contador = data.tiempo_maximo_contador
     conf.correos_historia_clinica = data.correos_historia_clinica
     conf.correos_enfermeria = data.correos_enfermeria
     conf.correos_otros = data.correos_otros
@@ -151,10 +159,48 @@ def update_config(data: ConfiguracionParametrosDTO, db: Session = Depends(get_db
         "hora_restablecimiento": conf.hora_restablecimiento,
         "auto_restablecer": conf.auto_restablecer,
         "tipos_habilitados": conf.tipos_habilitados,
+        "tiempo_maximo_contador": getattr(conf, "tiempo_maximo_contador", "12:00") or "12:00",
         "correos_historia_clinica": conf.correos_historia_clinica or "",
         "correos_enfermeria": conf.correos_enfermeria or "",
         "correos_otros": conf.correos_otros or "",
     }
+
+
+@router.get("/modulos-inicio", response_model=ConfiguracionModulosInicioDTO)
+def get_modulos_inicio(db: Session = Depends(get_db)):
+    conf = db.query(ConfiguracionModulosInicio).first()
+    if not conf:
+        default_mods = {
+            "coordinator": True,
+            "creacionUsuario": True,
+            "restablecimientoPassword": True,
+            "validator": True,
+            "solicitud": True,
+        }
+        conf = ConfiguracionModulosInicio(id=1, modulos=default_mods, updated_at=datetime.utcnow())
+        db.add(conf)
+        db.commit()
+        db.refresh(conf)
+    return conf.modulos or {
+        "coordinator": True,
+        "creacionUsuario": True,
+        "restablecimientoPassword": True,
+        "validator": True,
+        "solicitud": True,
+    }
+
+
+@router.put("/modulos-inicio", response_model=ConfiguracionModulosInicioDTO)
+def update_modulos_inicio(data: ConfiguracionModulosInicioDTO, db: Session = Depends(get_db)):
+    conf = db.query(ConfiguracionModulosInicio).first()
+    if not conf:
+        conf = ConfiguracionModulosInicio(id=1)
+        db.add(conf)
+    conf.modulos = data.dict()
+    conf.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(conf)
+    return conf.modulos
 
 @router.post("/restablecer-defecto")
 def restablecer_parametros_defecto(db: Session = Depends(get_db)):

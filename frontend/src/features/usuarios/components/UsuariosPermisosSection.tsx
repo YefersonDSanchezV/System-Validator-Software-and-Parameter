@@ -34,11 +34,25 @@ export function UsuariosPermisosSection({ onError }: { onError: (msg: string) =>
       <SectionHeader title="Permisos de Usuarios" subtitle="Autoriza a qué plataformas puede solicitar creación cada usuario (Almera, Dinámica, Enterprise, etc.)." />
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
         <div>
-          <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">Seleccionar Usuario</label>
-          <select value={selectedId ?? ""} onChange={(e)=>setSelectedId(Number(e.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white font-semibold">
-            {usuarios.map((u)=><option key={u.id} value={u.id}>{u.nombre_completo} ({u.nombre_usuario}) - {u.correo_institucional}</option>)}
-          </select>
-          {usuarios.length===0 && <p className="text-xs text-slate-400 mt-2">No hay usuarios creados. Cree primero en Usuarios de Solicitudes de Usuarios.</p>}
+          <p className="block text-xs font-semibold text-slate-600 uppercase mb-2">Seleccione un usuario</p>
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr><th className="px-3 py-2">Usuario</th><th className="px-3 py-2">Nombre</th><th className="px-3 py-2">Correo</th><th className="px-3 py-2">Cargo</th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {usuarios.map((u) => (
+                  <tr key={u.id} onClick={() => setSelectedId(u.id)} className={`cursor-pointer transition-colors ${selectedId === u.id ? "bg-[#0778ac]/10 text-slate-900" : "hover:bg-slate-50"}`}>
+                    <td className="px-3 py-2.5 font-semibold">{u.nombre_usuario}</td>
+                    <td className="px-3 py-2.5">{u.nombre_completo}</td>
+                    <td className="px-3 py-2.5">{u.correo_institucional}</td>
+                    <td className="px-3 py-2.5">{u.cargo || "—"}</td>
+                  </tr>
+                ))}
+                {usuarios.length===0 && <tr><td colSpan={4} className="px-3 py-4 text-center text-xs text-slate-400">No hay usuarios creados. Cree primero un usuario de solicitud.</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </div>
         {selectedId && (
           <>

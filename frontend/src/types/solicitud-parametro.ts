@@ -14,6 +14,7 @@ export interface SolicitudParametro {
   fechaCierre: string;
   horaApertura: string;
   horaCierre: string;
+  tiempoLimite?: string | null;
   totalValor: number | null;
   totalUnidad: string | null;
   solicitante: string;
@@ -26,6 +27,8 @@ export interface SolicitudParametro {
   solicitudExtension?: string | null;
   observacionResolucion?: string | null;
   fechaRegistro: string;
+  fechaHabilitacion?: string | null;
+  fechaExpiracion?: string | null;
 }
 
 export interface ApiSolicitudParametro {
@@ -37,6 +40,7 @@ export interface ApiSolicitudParametro {
   fecha_cierre: string | null;
   hora_apertura: string | null;
   hora_cierre: string | null;
+  tiempo_limite?: string | null;
   total_valor: number | null;
   total_unidad: string | null;
   solicitante: string;
@@ -49,6 +53,8 @@ export interface ApiSolicitudParametro {
   solicitud_extension: string | null;
   observacion_resolucion: string | null;
   fecha_registro: string;
+  fecha_habilitacion?: string | null;
+  fecha_expiracion?: string | null;
 }
 
 export interface ConfiguracionParametrosDTO {
@@ -58,9 +64,18 @@ export interface ConfiguracionParametrosDTO {
   hora_restablecimiento: string;
   auto_restablecer: boolean;
   tipos_habilitados: string[];
+  tiempo_maximo_contador?: string;
   correos_historia_clinica?: string;
   correos_enfermeria?: string;
   correos_otros?: string;
+}
+
+export interface ConfiguracionModulosInicioDTO {
+  coordinator: boolean;
+  creacionUsuario: boolean;
+  restablecimientoPassword: boolean;
+  validator: boolean;
+  solicitud: boolean;
 }
 
 export const toSolicitudParametro = (item: ApiSolicitudParametro): SolicitudParametro => ({
@@ -72,6 +87,7 @@ export const toSolicitudParametro = (item: ApiSolicitudParametro): SolicitudPara
   fechaCierre: item.fecha_cierre ?? "",
   horaApertura: item.hora_apertura ?? "",
   horaCierre: item.hora_cierre ?? "",
+  tiempoLimite: item.tiempo_limite,
   totalValor: item.total_valor,
   totalUnidad: item.total_unidad,
   solicitante: item.solicitante,
@@ -84,4 +100,6 @@ export const toSolicitudParametro = (item: ApiSolicitudParametro): SolicitudPara
   solicitudExtension: item.solicitud_extension,
   observacionResolucion: item.observacion_resolucion,
   fechaRegistro: item.fecha_registro,
+  fechaHabilitacion: item.fecha_habilitacion,
+  fechaExpiracion: item.fecha_expiracion,
 });

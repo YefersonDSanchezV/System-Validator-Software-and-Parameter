@@ -26,13 +26,16 @@ export function SolicitudParametroSection({
   canApprove?: boolean;
   canHabilitarParametro?: boolean;
 }) {
+  const todayStr = new Date().toISOString().split("T")[0];
+
   const [form, setForm] = useState({
     tipoParametro: "Enfermeria" as SolicitudParametro["tipoParametro"],
     descripcion: "",
-    fechaApertura: "",
-    fechaCierre: "",
+    fechaApertura: todayStr,
+    fechaCierre: todayStr,
     horaApertura: "",
     horaCierre: "",
+    tiempoLimite: "12:00",
     solicitante: "",
     area: "",
     ingreso: "",
@@ -60,6 +63,7 @@ export function SolicitudParametroSection({
   
   const [paramEstado, setParamEstado] = useState<ParametrosEstado | null>(null);
   const [availableTipos, setAvailableTipos] = useState<string[]>(["Historia Clinica", "Enfermeria", "Otros"]);
+  const [maxTiempoContador, setMaxTiempoContador] = useState<string>("12:00");
 
   const fetchParamEstado = () => {
     api<ParametrosEstado>("/parametros-clinicos/estado").then(setParamEstado).catch(() => {});
@@ -67,6 +71,17 @@ export function SolicitudParametroSection({
 
   const fetchTipos = () => {
     api<string[]>("/parametros-clinicos/tipos").then(setAvailableTipos).catch(() => {});
+    api<ConfiguracionParametrosDTO>("/parametros-clinicos/config")
+      .then((conf) => {
+        if (conf.tiempo_maximo_contador) {
+          setMaxTiempoContador(conf.tiempo_maximo_contador);
+          setForm((prev) => ({
+            ...prev,
+            tiempoLimite: prev.tiempoLimite === "12:00" ? conf.tiempo_maximo_contador! : prev.tiempoLimite,
+          }));
+        }
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {
@@ -80,7 +95,9 @@ export function SolicitudParametroSection({
   const descriptionLength = form.descripcion.trim().length;
   const minDescriptionMet = !isOtros || descriptionLength >= 50;
   const parsedApertura = form.fechaApertura ? new Date(`${form.fechaApertura}T00:00:00`) : null;
-  const parsedCierre = form.fechaCierre ? new Date(`${form.fechaCierre}T00:00:00`) : null;
+  const parsedCierre = (isEnfermeria || isHistoriaClinica)
+    ? new Date(`${todayStr}T00:00:00`)
+    : (form.fechaCierre ? new Date(`${form.fechaCierre}T00:00:00`) : null);
   const dateRangeValid =
     !form.fechaApertura ||
     !form.fechaCierre ||
@@ -88,14 +105,16 @@ export function SolicitudParametroSection({
 
   const datesValid = isOtros
     ? (form.fechaApertura.trim() !== "" && form.horaApertura.trim() !== "" && dateRangeValid)
-    : (form.fechaApertura.trim() !== "" && form.fechaCierre.trim() !== "" && dateRangeValid);
+    : (form.fechaApertura.trim() !== "" && dateRangeValid);
 
   const totalPreview = (() => {
-    if (isOtros || !parsedApertura || !parsedCierre || !dateRangeValid) return null;
-    const msPerDay = 1000 * 60 * 60 * 24;
-    const diffDays = Math.floor((parsedCierre.getTime() - parsedApertura.getTime()) / msPerDay) + 1;
-    if (form.tipoParametro === "Enfermeria") return `${diffDays * 24} hr`;
-    if (form.tipoParametro === "Historia Clinica") return `${diffDays} dias`;
+    if (isOtros) return null;
+    if (!parsedApertura || !parsedCierre || !dateRangeValid) return null;
+    const diffMs = parsedCierre.getTime() - parsedApertura.getTime();
+    const days = Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1;
+    if (days <= 0) return null;
+    if (isEnfermeria) return `${days * 24} hr`;
+    if (isHistoriaClinica) return `${days} dias`;
     return null;
   })();
 
@@ -108,6 +127,12 @@ export function SolicitudParametroSection({
     if (isHistoriaClinica) return form.ingreso.trim() !== "" && form.medico.trim() !== "";
     if (isEnfermeria) return form.ingreso.trim() !== "";
     return true;
+  };
+
+  const parseTimeToMinutes = (t: string) => {
+    if (!t || !t.includes(":")) return 0;
+    const parts = t.split(":");
+    return (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
   };
 
   useEffect(() => {
@@ -163,6 +188,26 @@ export function SolicitudParametroSection({
       setFormError(isHistoriaClinica ? "Para Historia Clínica es obligatorio el ingreso y el médico." : "Para Enfermería es obligatorio el ingreso.");
       return;
     }
+    if ((isEnfermeria || isHistoriaClinica)) {
+      if (!form.tiempoLimite || !form.tiempoLimite.trim() || !form.tiempoLimite.includes(":")) {
+        setFormError("Debe ingresar un tiempo de habilitación en formato HH:mm (ej. 02:00).");
+        return;
+      }
+      const reqMins = parseTimeToMinutes(form.tiempoLimite);
+      const maxMins = parseTimeToMinutes(maxTiempoContador || "12:00");
+      if (reqMins <= 0) {
+        setFormError("El tiempo de habilitación debe ser mayor a 00:00.");
+        return;
+      }
+      if (reqMins > maxMins) {
+        setFormError(`El tiempo de habilitación no puede superar el límite configurado de ${maxTiempoContador} horas.`);
+        return;
+      }
+      if (reqMins > 12 * 60) {
+        setFormError("El tiempo máximo permitido es de 12 horas en horario de 12h.");
+        return;
+      }
+    }
     if (!datesValid) {
       setFormError("Verifique las fechas y horas registradas.");
       return;
@@ -175,9 +220,10 @@ export function SolicitudParametroSection({
         tipo_parametro: form.tipoParametro,
         descripcion: form.descripcion.trim(),
         fecha_apertura: form.fechaApertura ? form.fechaApertura : null,
-        fecha_cierre: form.fechaCierre ? form.fechaCierre : null,
+        fecha_cierre: (isEnfermeria || isHistoriaClinica) ? todayStr : (form.fechaCierre ? form.fechaCierre : null),
         hora_apertura: isOtros && form.horaApertura ? form.horaApertura : null,
         hora_cierre: isOtros && form.horaCierre ? form.horaCierre : null,
+        tiempo_limite: (isEnfermeria || isHistoriaClinica) ? form.tiempoLimite.trim() : null,
         solicitante: form.solicitante.trim(),
         area: form.area.trim(),
         ingreso: (isEnfermeria || isHistoriaClinica) ? form.ingreso.trim() : null,
@@ -189,10 +235,11 @@ export function SolicitudParametroSection({
         setForm({
           tipoParametro: "Enfermeria",
           descripcion: "",
-          fechaApertura: "",
-          fechaCierre: "",
+          fechaApertura: todayStr,
+          fechaCierre: todayStr,
           horaApertura: "",
           horaCierre: "",
+          tiempoLimite: maxTiempoContador || "12:00",
           solicitante: "",
           area: "",
           ingreso: "",
@@ -204,6 +251,16 @@ export function SolicitudParametroSection({
         onError(error instanceof Error ? error.message : "No fue posible registrar la solicitud.");
       })
       .finally(() => setSaving(false));
+  };
+
+  const handleOpenNuevaSolicitud = () => {
+    fetchTipos();
+    setForm((prev) => ({
+      ...prev,
+      tiempoLimite: prev.tiempoLimite || maxTiempoContador || "12:00",
+    }));
+    setFormError(null);
+    setOpen(true);
   };
 
   const handleResolutionSuccess = (updated: SolicitudParametro) => {
@@ -254,7 +311,7 @@ export function SolicitudParametroSection({
               Restablecer Valores por Defecto
             </Btn>
           )}
-          <Btn v="primary" onClick={() => { fetchTipos(); setOpen(true); }}>
+          <Btn v="primary" onClick={handleOpenNuevaSolicitud}>
             <Plus size={14} /> Nueva Solicitud
           </Btn>
         </div>
@@ -293,7 +350,7 @@ export function SolicitudParametroSection({
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              {["Consecutivo", "Tipo de Parámetro", "Solicitante", "Área", "Apertura", "Cierre", "Total", "Estado", "Acciones"].map((heading) => (
+              {["Consecutivo", "Tipo de Parámetro", "Solicitante", "Área", "Apertura", "Cierre", "Tiempo Parámetro", "Total", "Estado", "Acciones"].map((heading) => (
                 <th
                   key={heading}
                   className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50"
@@ -342,6 +399,7 @@ export function SolicitudParametroSection({
               <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
               <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
               <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
+              <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
               <th className="px-2 py-1.5 bg-slate-100 font-normal">
                 <select
                   value={colFilters.estado}
@@ -361,13 +419,13 @@ export function SolicitudParametroSection({
           <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-slate-400 text-sm">
+                  <td colSpan={10} className="px-4 py-10 text-center text-slate-400 text-sm">
                     Cargando solicitudes...
                   </td>
                 </tr>
               ) : filteredSolicitudes.length === 0 ? (
               <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-slate-400 text-sm">
+                  <td colSpan={10} className="px-4 py-10 text-center text-slate-400 text-sm">
                   No hay solicitudes registradas.
                 </td>
               </tr>
@@ -380,6 +438,9 @@ export function SolicitudParametroSection({
                   <td className="px-4 py-3 text-slate-600 text-xs">{item.area || "—"}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs font-mono">{item.fechaApertura || "—"}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs font-mono">{item.fechaCierre || "—"}</td>
+                  <td className="px-4 py-3 text-slate-800 text-xs font-mono font-bold">
+                    {item.tiempoLimite ? `${item.tiempoLimite} hrs` : "—"}
+                  </td>
                   <td className="px-4 py-3 text-slate-700 text-xs font-semibold">{formatTotal(item)}</td>
                   <td className="px-4 py-3">
                     <StatusBadge estado={item.estado} />
@@ -548,7 +609,7 @@ export function SolicitudParametroSection({
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
-                Fecha de apertura *
+                Fecha apertura desde *
               </label>
               <input
                 type="date"
@@ -559,16 +620,73 @@ export function SolicitudParametroSection({
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
-                Fecha de cierre {isOtros ? <span className="normal-case text-slate-400 font-normal">(Opcional)</span> : "*"}
+                Fecha de cierre {isOtros ? <span className="normal-case text-slate-400 font-normal">(Opcional)</span> : (isEnfermeria || isHistoriaClinica) ? <span className="normal-case text-amber-600 font-semibold text-[11px]">(Fecha fija de hoy)</span> : "*"}
               </label>
               <input
                 type="date"
-                value={form.fechaCierre}
+                value={(isEnfermeria || isHistoriaClinica) ? todayStr : form.fechaCierre}
+                disabled={isEnfermeria || isHistoriaClinica}
                 onChange={(e) => setForm({ ...form, fechaCierre: e.target.value })}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0778ac]"
+                className={`w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0778ac] ${
+                  (isEnfermeria || isHistoriaClinica) ? "bg-slate-100 text-slate-500 cursor-not-allowed font-medium" : "bg-white"
+                }`}
               />
             </div>
           </div>
+
+          {(isEnfermeria || isHistoriaClinica) && (
+            <div className="border-t border-slate-100 pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                  Tiempo de Habilitación / Contador (HH:mm) *
+                </label>
+                <span className="text-[11px] font-bold text-[#0778ac] bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-200">
+                  Límite Máximo: {maxTiempoContador}
+                </span>
+              </div>
+              <div className="relative flex items-center rounded-lg border border-slate-300 bg-white transition-all focus-within:ring-2 focus-within:ring-[#0778ac] focus-within:border-[#0778ac]">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={5}
+                  placeholder={maxTiempoContador || "12:00"}
+                  value={form.tiempoLimite || ""}
+                  onChange={(e) => {
+                    let raw = e.target.value.replace(/[^0-9:]/g, "");
+                    if (raw.length === 2 && !raw.includes(":") && !e.target.value.endsWith(":")) {
+                      raw = raw + ":";
+                    }
+                    if (raw.length > 5) raw = raw.slice(0, 5);
+                    setForm({ ...form, tiempoLimite: raw });
+                  }}
+                  onBlur={() => {
+                    if (!form.tiempoLimite) {
+                      setForm({ ...form, tiempoLimite: maxTiempoContador || "12:00" });
+                      return;
+                    }
+                    const parts = form.tiempoLimite.split(":");
+                    let h = parseInt(parts[0] || "0", 10);
+                    let m = parseInt(parts[1] || "0", 10);
+                    if (isNaN(h)) h = 0;
+                    if (isNaN(m)) m = 0;
+                    if (h > 12) h = 12;
+                    if (h < 0) h = 0;
+                    if (m > 59) m = 59;
+                    if (m < 0) m = 0;
+                    setForm({ ...form, tiempoLimite: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}` });
+                  }}
+                  className="w-full px-3 py-2 text-sm bg-transparent font-semibold font-mono text-slate-800 focus:outline-none"
+                />
+                <span className="pr-3 text-[11px] font-mono font-bold text-slate-400 select-none">
+                  HH:mm
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1">
+                <span>⏱</span> Toma por defecto el tiempo máximo parametrizado ({maxTiempoContador}), pero puede ser editado para esta solicitud si se requiere menor tiempo.
+              </p>
+            </div>
+          )}
+
           {isOtros && (
             <div className="grid gap-4 md:grid-cols-2">
               <div>
@@ -597,9 +715,6 @@ export function SolicitudParametroSection({
           )}
           {!dateRangeValid && form.fechaApertura && form.fechaCierre && (
             <p className="text-xs text-rose-600">La fecha de cierre no puede ser menor que la fecha de apertura.</p>
-          )}
-          {!isOtros && totalPreview && (
-            <p className="text-xs text-slate-600">Total calculado: <span className="font-semibold text-slate-900">{totalPreview}</span></p>
           )}
           <div className="flex gap-2 pt-2 border-t border-slate-100">
             <Btn v="primary" onClick={handleSave} disabled={saving}>
@@ -664,8 +779,14 @@ export function SolicitudParametroSection({
                   {selectedSolicitud.fechaCierre || "—"} {selectedSolicitud.horaCierre ? `(${selectedSolicitud.horaCierre})` : ""}
                 </p>
               </div>
+              {selectedSolicitud.tiempoLimite && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3">
+                  <p className="text-[11px] uppercase tracking-wider text-blue-700 font-semibold">Contador / Tiempo Límite</p>
+                  <p className="font-bold text-blue-900 mt-1 font-mono">⏱ {selectedSolicitud.tiempoLimite} hrs</p>
+                </div>
+              )}
               <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-[11px] uppercase tracking-wider text-slate-400">Total</p>
+                <p className="text-[11px] uppercase tracking-wider text-slate-400">Total / Duración</p>
                 <p className="font-semibold text-slate-800 mt-1">{formatTotal(selectedSolicitud)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 p-3">
@@ -673,6 +794,15 @@ export function SolicitudParametroSection({
                 <div className="mt-1"><StatusBadge estado={selectedSolicitud.estado} /></div>
               </div>
             </div>
+
+            {selectedSolicitud.fechaExpiracion && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-amber-700 font-semibold">Expiración programada del contador</p>
+                <p className="text-sm font-bold text-amber-900 mt-1">
+                  {new Date(selectedSolicitud.fechaExpiracion).toLocaleString("es-CO")}
+                </p>
+              </div>
+            )}
 
             {selectedSolicitud.motivoRechazo && (
               <div className="rounded-xl border border-red-200 bg-red-50 p-3">

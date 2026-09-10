@@ -27,7 +27,8 @@ ALL_COORDINATOR_SECTIONS = [
     "detalles", "solicitudParametro", "solicitudUsuario", "solicitudPassword", "parametrosConfig",
     "reporteFirmas", "reporteDetalles", "documentos_boletines", "documentos_manuales",
     "solicitudesManuales", "auditoria", "permisos",
-    "parametrosEnviosCorreo", "parametrosSolicitudes", "valoresParametros",
+    "parametrosCorreos", "parametrosEnviosCorreo", "parametrosSolicitudes", "valoresParametros",
+    "modulosInicio",
     "generalesPermisos", "generalesPlataformas", "generalesUsuarios", "generalesUsuariosPermisos"
 ]
 
@@ -156,10 +157,14 @@ class VersionService:
             if p and p.permisos:
                 try:
                     secciones = json.loads(p.permisos)
+                    if isinstance(secciones, list):
+                        # Ensure default newly added sections are included if user is admin or has generales
+                        if "modulosInicio" not in secciones and (u == "sistemas" or "generalesPermisos" in secciones or "permisos" in secciones):
+                            secciones.append("modulosInicio")
                 except Exception:
-                    secciones = ALL_COORDINATOR_SECTIONS
+                    secciones = list(ALL_COORDINATOR_SECTIONS)
             else:
-                secciones = ALL_COORDINATOR_SECTIONS
+                secciones = list(ALL_COORDINATOR_SECTIONS)
             resultado.append({"usuario": u, "permisos": secciones})
         return resultado
 

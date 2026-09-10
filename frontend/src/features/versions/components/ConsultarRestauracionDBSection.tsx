@@ -12,9 +12,11 @@ import { type Version, type RestauracionDB } from "@/types/version";
 export function ConsultarRestauracionDBSection({
   versions,
   onError,
+  canDelete = true,
 }: {
-  versions: Version[];
-  onError: (message: string) => void;
+  versions?: Version[];
+  onError?: (message: string) => void;
+  canDelete?: boolean;
 }) {
   const [restauraciones, setRestauraciones] = useState<RestauracionDB[]>([]);
   const [loading, setLoading] = useState(false);
@@ -69,7 +71,7 @@ export function ConsultarRestauracionDBSection({
         <table className="w-full min-w-[980px] text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              {["ID", "Contenedor BD", "Fecha Restauración", "Fecha Última Copia BD", "Compilación Anclada", "Usuario", "Acciones"].map((h) => (
+              {["ID", "Contenedor BD", "Fecha Restauración", "Fecha Última Copia BD", "Compilación Anclada", "Usuario", ...(canDelete ? ["Acciones"] : [])].map((h) => (
                 <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">{h}</th>
               ))}
             </tr>
@@ -83,11 +85,13 @@ export function ConsultarRestauracionDBSection({
                 <td className="px-4 py-3 text-slate-700 font-mono text-xs whitespace-nowrap">{r.fecha_ultima_copia?.slice(0, 16).replace("T", " ")}</td>
                 <td className="px-4 py-3 text-slate-900 font-medium min-w-[240px]">{r.compilacion_titulo || "—"}</td>
                 <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap min-w-[120px]">{r.usuario || "—"}</td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <Btn v="danger" sm onClick={() => handleDeleteRestauracion(r.oid)}>
-                    <Trash2 size={13} /> Eliminar
-                  </Btn>
-                </td>
+                {canDelete && (
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <Btn v="danger" sm onClick={() => handleDeleteRestauracion(r.oid)}>
+                      <Trash2 size={13} /> Eliminar
+                    </Btn>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

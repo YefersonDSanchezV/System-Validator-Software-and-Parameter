@@ -10,6 +10,7 @@ class SolicitudParametroCreate(BaseModel):
     fecha_cierre: Optional[date] = None
     hora_apertura: Optional[str] = None
     hora_cierre: Optional[str] = None
+    tiempo_limite: Optional[str] = None
     solicitante: str = Field(..., max_length=200)
     area: Optional[str] = None
     ingreso: Optional[str] = None
@@ -41,7 +42,18 @@ class SolicitudParametroResponse(SolicitudParametroCreate):
     solicitud_extension: Optional[str] = None
     observacion_resolucion: Optional[str] = None
     fecha_registro: datetime
+    fecha_habilitacion: Optional[datetime] = None
+    fecha_expiracion: Optional[datetime] = None
     total_valor: Optional[int] = None
     total_unidad: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ConfiguracionModulosInicioDTO(BaseModel):
+    coordinator: bool = True
+    creacionUsuario: bool = True
+    restablecimientoPassword: bool = True
+    validator: bool = True
+    solicitud: bool = True
+

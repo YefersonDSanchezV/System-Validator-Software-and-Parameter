@@ -94,6 +94,41 @@ def check_and_reset_parameters():
         logger.error(f"Error en tarea programada check_and_reset_parameters: {e}", exc_info=True)
 
 
+def check_expired_countdown_parameters():
+    """Verifica periódicamente si alguna solicitud de parámetro con contador ha expirado."""
+    import datetime
+    from app.models.solicitud_parametro import SolicitudParametro
+    from sqlalchemy import and_
+
+    db = SessionLocal()
+    try:
+        now = datetime.datetime.now()
+        expired_requests = (
+            db.query(SolicitudParametro)
+            .filter(
+                and_(
+                    SolicitudParametro.estado == "Habilitado",
+                    SolicitudParametro.fecha_expiracion.isnot(None),
+                    SolicitudParametro.fecha_expiracion <= now,
+                )
+            )
+            .all()
+        )
+
+        if expired_requests:
+            logger.info(f"=== Encontradas {len(expired_requests)} solicitudes con contador expirado. Restableciendo parámetros ===")
+            check_and_reset_parameters()
+            for req in expired_requests:
+                req.observacion_resolucion = f"{req.observacion_resolucion or ''} [Contador de tiempo finalizado a las {now.strftime('%H:%M:%S')} - Parámetro restablecido automáticamente]".strip()
+                # Limpiamos fecha_expiracion para no procesarla de nuevo
+                req.fecha_expiracion = None
+            db.commit()
+    except Exception as e:
+        logger.error(f"Error en check_expired_countdown_parameters: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
 def reschedule_job(hora_str: str, auto_restablecer: bool = True):
     """Reprograma el job del scheduler con la nueva hora parametrizada (hora Colombia)."""
     global _scheduler
@@ -162,6 +197,19 @@ def init_scheduler():
             logger.info("Scheduler configurado con hora de fallback: 20:05 hora Colombia.")
     else:
         logger.info("Auto-restablecimiento desactivado. Scheduler iniciado sin tareas programadas.")
+
+    # Job que verifica parámetros con contador cada 1 minuto
+    try:
+        from apscheduler.triggers.interval import IntervalTrigger
+        _scheduler.add_job(
+            check_expired_countdown_parameters,
+            IntervalTrigger(minutes=1),
+            id="check_countdown_job",
+            replace_existing=True,
+        )
+        logger.info("Job de verificación de contador de parámetros programado (cada 1 minuto).")
+    except Exception as e:
+        logger.error(f"Error programando job de contador: {e}", exc_info=True)
 
     _scheduler.start()
     logger.info("Scheduler BackgroundScheduler iniciado correctamente.")

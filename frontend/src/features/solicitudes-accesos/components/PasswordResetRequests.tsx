@@ -23,6 +23,7 @@ export function PasswordResetRequests({ onError, admin = false }: { onError: (me
   const [areaOtro, setAreaOtro] = useState("");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
   const [platforms, setPlatforms] = useState<string[]>([]);
   const set = (key: keyof typeof passwordInitial, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -59,22 +60,23 @@ export function PasswordResetRequests({ onError, admin = false }: { onError: (me
     const areaToSend = form.area === "OTROS" ? areaOtro.trim() : form.area.trim();
     // Validación de áreas
     if (!form.plataforma.trim() || !form.solicitante.trim() || !form.area.trim() || !form.usuario.trim() || !form.observacion.trim() || !form.correo_jefe.trim()) {
-      onError("Complete todos los campos obligatorios.");
+      setFormError("Complete todos los campos obligatorios.");
       return;
     }
     if (form.area === "OTROS" && !areaOtro.trim()) {
-      onError("Especifique el nombre del área cuando seleccione OTROS.");
+      setFormError("Especifique el nombre del área cuando seleccione OTROS.");
       return;
     }
     if (form.area !== "OTROS" && !(AREAS_RESTABLECIMIENTO as readonly string[]).includes(form.area)) {
-      onError("Seleccione un área válida de la lista.");
+      setFormError("Seleccione un área válida de la lista.");
       return;
     }
     if (!isValidEmail(form.correo_jefe)) {
-      onError("Ingrese un correo válido para el jefe directo.");
+      setFormError("Ingrese un correo válido para el jefe directo.");
       return;
     }
     const payload = { ...form, area: areaToSend };
+    setFormError("");
     setSaving(true);
     api<PasswordRequest>("/solicitudes-accesos/restablecimientos-password", { method: "POST", body: JSON.stringify(payload) })
       .then((created) => {
@@ -84,7 +86,7 @@ export function PasswordResetRequests({ onError, admin = false }: { onError: (me
         setOpen(false);
         toast.success("Solicitud de restablecimiento registrada.");
       })
-      .catch((error) => onError(error instanceof Error ? error.message : "No fue posible registrar la solicitud."))
+      .catch((error) => setFormError(error instanceof Error ? error.message : "No fue posible registrar la solicitud."))
       .finally(() => setSaving(false));
   };
 
@@ -108,7 +110,7 @@ export function PasswordResetRequests({ onError, admin = false }: { onError: (me
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <SectionHeader title="Solicitudes de Restablecimiento de Contraseña" subtitle="Registre y consulte solicitudes de restablecimiento." />
-        <Btn onClick={() => setOpen(true)}>
+        <Btn onClick={() => { setFormError(""); setOpen(true); }}>
           <Plus size={14} /> Solicitud de Restablecimiento
         </Btn>
       </div>
@@ -226,7 +228,8 @@ export function PasswordResetRequests({ onError, admin = false }: { onError: (me
         ))}
       </RequestTable>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Nueva Solicitud de Restablecimiento" size="md">
+      <Modal open={open} onClose={() => { setOpen(false); setFormError(""); }} title="Nueva Solicitud de Restablecimiento" size="md">
+        {formError && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formError}</div>}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Plataforma *</label>

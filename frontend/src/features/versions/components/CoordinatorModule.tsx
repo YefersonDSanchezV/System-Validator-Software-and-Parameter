@@ -60,6 +60,7 @@ const ALL_SECTION_LABELS: Record<string, string> = {
   permisos: "Permisos (legacy)",
   parametrosCorreos: "Parámetros de Correos",
   valoresParametros: "Valores Parámetros",
+  modulosInicio: "Módulos de Inicio",
   generalesPermisos: "Generales - Permisos",
   generalesPlataformas: "Generales - Plataformas",
   generalesUsuarios: "Generales - Usuarios",
@@ -95,6 +96,7 @@ type CoordTab =
   | "parametrosSolicitudes"
   | "parametrosCorreosNotificaciones"
   | "valoresParametros"
+  | "modulosInicio"
   | "generalesPermisos"
   | "generalesPlataformas"
   | "generalesUsuarios"
@@ -106,6 +108,8 @@ import { ParametrosSolicitudesSection } from "@/features/parametros/components/P
 import { UsuariosSolicitudSection } from "@/features/usuarios/components/UsuariosSolicitudSection";
 import { UsuariosPermisosSection } from "@/features/usuarios/components/UsuariosPermisosSection";
 import { SolicitudesManualesSection } from "@/features/manuales/components/SolicitudesManualesSection";
+import { ModulosInicioSection } from "@/features/modulos/components/ModulosInicioSection";
+import { LayoutGrid } from "lucide-react";
 
 function CoordinatorModule({
   versions, setVersions, observaciones, setObservaciones, onError,
@@ -140,6 +144,7 @@ function CoordinatorModule({
     reportes: false,
     documentos: false,
     auditoria: false,
+    modulos: false,
     generales: false,
     generalesUsuarios: false,
   });
@@ -189,6 +194,9 @@ function CoordinatorModule({
   useEffect(() => {
     setTab(selectedSection);
     setActiveSection(selectedSection);
+    if (selectedSection === "modulosInicio") {
+      setOpenFolders((prev) => ({ ...prev, modulos: true }));
+    }
   }, [selectedSection]);
 
   const canAccess = (key: string) => {
@@ -200,6 +208,14 @@ function CoordinatorModule({
         userPermissions.includes("parametrosCorreosNotificaciones") ||
         userPermissions.includes("versionParametros") ||
         userPermissions.includes("parametrosConfig")
+      );
+    }
+    if (key === "modulosInicio") {
+      return (
+        userPermissions.includes("modulosInicio") ||
+        userPermissions.includes("generalesPermisos") ||
+        userPermissions.includes("permisos") ||
+        userPermissions.includes("registro")
       );
     }
     return userPermissions.includes(key);
@@ -619,6 +635,36 @@ function CoordinatorModule({
             </div>
           )}
 
+          {/* Folder: Módulos (NUEVO) */}
+          {canAccess("modulosInicio") && (
+            <div className="px-2 py-1 space-y-1">
+              <button
+                onClick={() => toggleFolder("modulos")}
+                className="w-full flex items-center justify-between px-3 py-2 text-slate-200 hover:text-white font-bold rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-[#0091ea]">
+                  <LayoutGrid size={15} className="text-[#0091ea]" />
+                  <span>Módulos</span>
+                </div>
+                <ChevronDown size={12} className={`transition-transform ${openFolders.modulos ? "rotate-180" : ""}`} />
+              </button>
+              {openFolders.modulos && (
+                <div className="ml-4 pl-3 border-l border-slate-700/60 space-y-1 my-1">
+                  {matchesSearch("Módulos de inicio") && (
+                    <button
+                      onClick={() => goToSection("modulosInicio")}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${
+                        activeSection === "modulosInicio" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                      }`}
+                    >
+                      <span className="truncate block">Módulos de inicio</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Folder: Generales (NUEVO) */}
           {(canAccess("generalesPermisos") || canAccess("generalesPlataformas") || canAccess("generalesUsuarios") || canAccess("generalesUsuariosPermisos") || canAccess("permisos")) && (
             <div className="px-2 py-1 space-y-1">
@@ -747,6 +793,9 @@ function CoordinatorModule({
         )}
         {activeSection === "valoresParametros" && (
           <ValoresParametrosSection onError={onError} />
+        )}
+        {activeSection === "modulosInicio" && (
+          <ModulosInicioSection onError={onError} />
         )}
         {activeSection === "parametrosConfig" && (
           <><ParametrosConfigSection onError={onError} /><AccessPlatformsConfig onError={onError} /></>

@@ -131,6 +131,32 @@ def initialize_database():
         conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS fecha_compilacion TIMESTAMP"))
         conn.execute(text("ALTER TABLE regversion ADD COLUMN IF NOT EXISTS es_produccion BOOLEAN DEFAULT false"))
 
+        # SolicitudParametro timer columns
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS tiempo_limite VARCHAR(10)"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS fecha_habilitacion TIMESTAMP"))
+        conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS fecha_expiracion TIMESTAMP"))
+
+        # ConfiguracionParametros max timer
+        conn.execute(text("ALTER TABLE configuracion_parametros ADD COLUMN IF NOT EXISTS tiempo_maximo_contador VARCHAR(10) DEFAULT '12:00'"))
+
+        # ConfiguracionModulosInicio table and default row
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS configuracion_modulos_inicio (
+                    id INTEGER PRIMARY KEY,
+                    modulos JSON NOT NULL,
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+            """))
+            mod_exists = conn.execute(text("SELECT id FROM configuracion_modulos_inicio LIMIT 1")).fetchone()
+            if not mod_exists:
+                conn.execute(text("""
+                    INSERT INTO configuracion_modulos_inicio (id, modulos, updated_at)
+                    VALUES (1, '{"coordinator": true, "creacionUsuario": true, "restablecimientoPassword": true, "validator": true, "solicitud": true}'::json, NOW())
+                """))
+        except Exception as exc:
+            logger.warning("Error inicializando configuracion_modulos_inicio: %s", exc)
+
         # Ensure configuracion_version_correos table exists via Base.metadata.create_all already, but also ensure default row
         try:
             conf_v_exists = conn.execute(text("SELECT id FROM configuracion_version_correos LIMIT 1")).fetchone()
@@ -138,6 +164,25 @@ def initialize_database():
                 conn.execute(text("INSERT INTO configuracion_version_correos (id, correos_pruebas, correos_produccion, updated_at) VALUES (1, '', '', NOW())"))
         except Exception:
             pass
+
+        # Update permisos_usuario_coordinador to ensure modulosInicio is present for admin users
+        try:
+            p_rows = conn.execute(text("SELECT id, usuario, permisos FROM permisos_usuario_coordinador")).fetchall()
+            for row in p_rows:
+                p_id, p_user, p_perm_raw = row[0], row[1], row[2]
+                if p_perm_raw:
+                    try:
+                        p_list = json.loads(p_perm_raw)
+                        if isinstance(p_list, list) and "modulosInicio" not in p_list:
+                            p_list.append("modulosInicio")
+                            conn.execute(
+                                text("UPDATE permisos_usuario_coordinador SET permisos = :perm WHERE id = :id"),
+                                {"perm": json.dumps(p_list), "id": p_id}
+                            )
+                    except Exception:
+                        pass
+        except Exception as exc:
+            logger.warning("Error actualizando permisos_usuario_coordinador: %s", exc)
 
 
 @asynccontextmanager

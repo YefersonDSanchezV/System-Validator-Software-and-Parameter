@@ -49,13 +49,19 @@ export function VersionRegistration({
   });
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [formErrors, setFormErrors] = useState<{ titulo?: string; descripcion?: string; enlace?: string; general?: string }>({});
 
   async function handleSave() {
-    if (!form.titulo.trim() || !form.descripcion.trim() || !form.enlace.trim()) {
-      onError("Título, descripción y enlace son obligatorios para registrar la versión.");
+    const errors: typeof formErrors = {};
+    if (!form.titulo.trim()) errors.titulo = "Indique el título de la versión.";
+    if (!form.descripcion.trim()) errors.descripcion = "Indique la descripción de la versión.";
+    if (!form.enlace.trim()) errors.enlace = "Indique el enlace de la versión.";
+    if (Object.keys(errors).length) {
+      setFormErrors(errors);
       return;
     }
 
+    setFormErrors({});
     setSaving(true);
     try {
       const created = await api<ApiVersion>("/versions/", {
@@ -82,7 +88,7 @@ export function VersionRegistration({
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (error) {
-      onError(error instanceof Error ? error.message : "No fue posible guardar la versión.");
+      setFormErrors({ general: error instanceof Error ? error.message : "No fue posible guardar la versión." });
     } finally {
       setSaving(false);
     }
@@ -97,15 +103,20 @@ export function VersionRegistration({
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
         <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Nuevo Registro de Versión</h3>
+        {formErrors.general && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.general}</div>}
 
         <div className="grid gap-4 md:grid-cols-2">
-          <FormInput
-            label="Título (Versión del Sistema)"
-            required
-            placeholder="Ej: Versión 2.4.1"
-            value={form.titulo}
-            onChange={(e) => setForm({ ...form, titulo: e.target.value })}
-          />
+          <div>
+            <FormInput
+              label="Título (Versión del Sistema)"
+              required
+              placeholder="Ej: Versión 2.4.1"
+              value={form.titulo}
+              onChange={(e) => { setForm({ ...form, titulo: e.target.value }); setFormErrors((current) => ({ ...current, titulo: undefined, general: undefined })); }}
+              className={formErrors.titulo ? "border-red-500 focus:border-red-500 focus:ring-red-200" : ""}
+            />
+            {formErrors.titulo && <p className="mt-1 text-xs text-red-600">{formErrors.titulo}</p>}
+          </div>
           <ContainerAutocompleteField
             label="Contenedor de Base de Datos"
             listId="version-registration-container-options"
@@ -118,7 +129,7 @@ export function VersionRegistration({
         <div className="grid gap-4 md:grid-cols-2">
           <FormInput
             label="Número de compilación"
-            placeholder="Ej: BUILD-2026-08-22"
+            placeholder="Ej: 12345"
             value={form.num_compilacion}
             onChange={(e) => setForm({ ...form, num_compilacion: e.target.value })}
           />
@@ -134,22 +145,29 @@ export function VersionRegistration({
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <FormTextarea
-            label="Descripción (Detalles de mejoras en la actualización)"
-            required
-            rows={3}
-            placeholder="Describa los cambios principales..."
-            value={form.descripcion}
-            onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
-          />
-          <FormInput
-            label="Enlace (URL de la versión)"
-            required
-            type="url"
-            placeholder="http://..."
-            value={form.enlace}
-            onChange={(e) => setForm({ ...form, enlace: e.target.value })}
-          />
+          <div>
+            <FormTextarea
+              label="Descripción (Detalles de mejoras en la actualización)"
+              required
+              rows={3}
+              placeholder="Describa los cambios principales..."
+              value={form.descripcion}
+              onChange={(e) => { setForm({ ...form, descripcion: e.target.value }); setFormErrors((current) => ({ ...current, descripcion: undefined, general: undefined })); }}
+            />
+            {formErrors.descripcion && <p className="mt-1 text-xs text-red-600">{formErrors.descripcion}</p>}
+          </div>
+          <div>
+            <FormInput
+              label="Enlace (URL de la versión)"
+              required
+              type="url"
+              placeholder="http://..."
+              value={form.enlace}
+              onChange={(e) => { setForm({ ...form, enlace: e.target.value }); setFormErrors((current) => ({ ...current, enlace: undefined, general: undefined })); }}
+              className={formErrors.enlace ? "border-red-500 focus:border-red-500 focus:ring-red-200" : ""}
+            />
+            {formErrors.enlace && <p className="mt-1 text-xs text-red-600">{formErrors.enlace}</p>}
+          </div>
         </div>
 
         <div className="flex items-center gap-3 pt-2 border-t border-slate-100">

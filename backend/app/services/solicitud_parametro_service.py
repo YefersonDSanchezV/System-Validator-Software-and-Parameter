@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from sqlalchemy.orm import Session
 from app.models.solicitud_parametro import SolicitudParametro
@@ -166,6 +166,8 @@ class SolicitudParametroService:
             horas_info += f'<tr><td style="{estilo_celda_label}">Hora de inicio</td><td style="{estilo_celda_valor}">{data.hora_apertura}</td></tr>'
         if data.hora_cierre:
             horas_info += f'<tr><td style="{estilo_celda_label}">Hora final</td><td style="{estilo_celda_valor}">{data.hora_cierre}</td></tr>'
+        if data.tiempo_limite:
+            horas_info += f'<tr><td style="{estilo_celda_label}">Tiempo habilitación</td><td style="{estilo_celda_valor}">{data.tiempo_limite}</td></tr>'
 
         cons_line = f"""
             <tr>
@@ -244,6 +246,7 @@ class SolicitudParametroService:
         fecha_cierre = data.fecha_cierre
         hora_apertura = data.hora_apertura.strip() if data.hora_apertura and data.hora_apertura.strip() else None
         hora_cierre = data.hora_cierre.strip() if data.hora_cierre and data.hora_cierre.strip() else None
+        tiempo_limite = data.tiempo_limite.strip() if data.tiempo_limite and data.tiempo_limite.strip() else None
         ingreso = data.ingreso.strip() if data.ingreso and data.ingreso.strip() else None
         medico = data.medico.strip() if data.medico and data.medico.strip() else None
         total_valor = None
@@ -282,6 +285,7 @@ class SolicitudParametroService:
             fecha_cierre=fecha_cierre,
             hora_apertura=hora_apertura,
             hora_cierre=hora_cierre,
+            tiempo_limite=tiempo_limite,
             total_valor=total_valor,
             total_unidad=total_unidad,
             solicitante=data.solicitante,
@@ -335,6 +339,17 @@ class SolicitudParametroService:
 
         solicitud.estado = "Habilitado"
         solicitud.observacion_resolucion = data.observacion
+
+        if solicitud.tiempo_limite:
+            try:
+                parts = solicitud.tiempo_limite.split(":")
+                h = int(parts[0])
+                m = int(parts[1]) if len(parts) > 1 else 0
+                now = datetime.now()
+                solicitud.fecha_habilitacion = now
+                solicitud.fecha_expiracion = now + timedelta(hours=h, minutes=m)
+            except Exception as exp_err:
+                logger.warning("Error calculando fecha_expiracion: %s", exp_err)
 
         updated = self.repository.update(db, solicitud)
 
@@ -549,4 +564,14 @@ class SolicitudParametroService:
         if solicitud is None:
             raise ValueError("La solicitud no existe")
         solicitud.estado = "Habilitado"
+        if solicitud.tiempo_limite:
+            try:
+                parts = solicitud.tiempo_limite.split(":")
+                h = int(parts[0])
+                m = int(parts[1]) if len(parts) > 1 else 0
+                now = datetime.now()
+                solicitud.fecha_habilitacion = now
+                solicitud.fecha_expiracion = now + timedelta(hours=h, minutes=m)
+            except Exception as exp_err:
+                logger.warning("Error calculando fecha_expiracion en aprobar: %s", exp_err)
         return self._enriquecer_solicitud(self.repository.update(db, solicitud))

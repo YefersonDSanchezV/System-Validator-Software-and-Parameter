@@ -100,6 +100,7 @@ const ALL_SECTION_LABELS: Record<string, string> = {
   // Nuevos módulos
   parametrosCorreos: "Parámetros de Correos",
   valoresParametros: "Valores Parámetros",
+  modulosInicio: "Módulos de Inicio",
   generalesPermisos: "Generales - Permisos",
   generalesPlataformas: "Generales - Plataformas",
   generalesUsuarios: "Generales - Usuarios",
@@ -137,6 +138,7 @@ type CoordTab =
   | "parametrosSolicitudes"
   | "parametrosCorreosNotificaciones"
   | "valoresParametros"
+  | "modulosInicio"
   | "generalesPermisos"
   | "generalesPlataformas"
   | "generalesUsuarios"

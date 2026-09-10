@@ -28,6 +28,7 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
   const [firma, setFirma] = useState<File | null>(null);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [otrosNombre, setOtrosNombre] = useState("");
@@ -90,6 +91,7 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
   }, []);
 
   const handleOpenModal = () => {
+    setFormError("");
     setForm({
       ...userInitial,
       solicitante: currentUser?.nombre_completo || currentUser?.nombre_usuario || "",
@@ -123,18 +125,19 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
       !hasSignature ||
       selectedTypes.length === 0
     ) {
-      onError("Complete todos los campos obligatorios y verifique la firma.");
+      setFormError("Complete todos los campos obligatorios y verifique la firma.");
       return;
     }
     if (selectedTypes.includes("Otros") && !otrosNombre.trim()) {
-      onError("Debe indicar el nombre de la plataforma para 'Otros'.");
+      setFormError("Debe indicar el nombre de la plataforma para 'Otros'.");
       return;
     }
     if (firma && !["image/jpeg", "image/png"].includes(firma.type)) {
-      onError("La firma debe estar en formato JPG o PNG.");
+      setFormError("La firma debe estar en formato JPG o PNG.");
       return;
     }
     const finalTipos = selectedTypes;
+    setFormError("");
     const data = new FormData();
     Object.entries(form).forEach(([key, value]) => data.append(key, value.trim()));
     data.append("tipos", JSON.stringify(finalTipos));
@@ -164,7 +167,7 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
         setOpen(false);
         toast.success("Solicitud de creación registrada.");
       })
-      .catch((error) => onError(error instanceof Error ? error.message : "No fue posible registrar la solicitud."))
+      .catch((error) => setFormError(error instanceof Error ? error.message : "No fue posible registrar la solicitud."))
       .finally(() => setSaving(false));
   };
 
@@ -242,7 +245,8 @@ export function UserCreationRequests({ onError, admin = false }: { onError: (mes
         ))}
       </RequestTable>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Nueva Solicitud de Creación de Usuario" size="lg">
+      <Modal open={open} onClose={() => { setOpen(false); setFormError(""); }} title="Nueva Solicitud de Creación de Usuario" size="lg">
+        {formError && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formError}</div>}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2 space-y-2">
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">¿En qué módulo(s) van a crear al empleado? *</label>
