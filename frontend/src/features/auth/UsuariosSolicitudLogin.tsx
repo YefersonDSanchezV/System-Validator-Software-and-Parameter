@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "@/lib/api/client";
+import { clearBearerAuth, getBearerToken, setBearerToken } from "@/lib/api/auth";
 import { Btn, SectionHeader } from "@/components/ui/custom";
 import { toast } from "sonner";
 
@@ -19,8 +20,7 @@ export function UsuariosSolicitudLogin({ onLogin }: { onLogin?: () => void }) {
       body: JSON.stringify({ identificador: identificador.trim(), password }),
     })
       .then((res) => {
-        localStorage.setItem("usuarios_solicitud_token", res.access_token);
-        localStorage.setItem("usuarios_solicitud_user", JSON.stringify(res.usuario));
+        setBearerToken(res.access_token, res.usuario);
         toast.success(`Bienvenido ${res.usuario.nombre_completo}`);
         if (onLogin) onLogin();
         else window.location.href = "/solicitud-usuario";
@@ -57,7 +57,7 @@ export function UsuariosSolicitudLogin({ onLogin }: { onLogin?: () => void }) {
 }
 
 export function UsuariosSolicitudPortal() {
-  const token = typeof window !== "undefined" ? localStorage.getItem("usuarios_solicitud_token") : null;
+  const token = getBearerToken();
   if (!token) return <UsuariosSolicitudLogin />;
   return <UsuariosSolicitudApp />;
 }
@@ -67,8 +67,7 @@ function UsuariosSolicitudApp() {
     try { return JSON.parse(localStorage.getItem("usuarios_solicitud_user") || "{}"); } catch { return {}; }
   })();
   const handleLogout = () => {
-    localStorage.removeItem("usuarios_solicitud_token");
-    localStorage.removeItem("usuarios_solicitud_user");
+    clearBearerAuth();
     window.location.href = "/solicitud-usuario/login";
   };
   return (
@@ -92,7 +91,7 @@ function UsuariosSolicitudApp() {
   );
 }
 
-import { UserCreationRequests } from "@/features/solicitudes-accesos/AccessRequestSections";
+import { UserCreationRequests } from "@/features/solicitudes-accesos";
 function LazyCreation(){
   const onError = (msg:string)=> toast.error(msg);
   return <UserCreationRequests onError={onError} />

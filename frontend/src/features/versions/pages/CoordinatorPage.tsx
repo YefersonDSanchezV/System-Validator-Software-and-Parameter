@@ -1,19 +1,46 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { api } from "@/lib/api/client";
+import { sortVersionsByCompilationDateDesc } from "@/lib/versionHelpers";
+import { toVersion, type ApiVersion } from "@/types/version";
+import type { Observacion } from "@/types/observacion";
+import { CoordinatorModule } from "@/features/versions/components/CoordinatorModule";
 import { toast } from "sonner";
+
 export function CoordinatorPage() {
-  const [tab, setTab] = useState("registro");
+  const [versions, setVersions] = useState<import("@/types/version").Version[]>([]);
+  const [observaciones, setObservaciones] = useState<Observacion[]>([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [coordinatorSection, setCoordinatorSection] = useState("registro" as any);
+  const [loggedUser] = useState("sistemas");
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([api<ApiVersion[]>("/versions/"), api<Observacion[]>("/observaciones/")])
+      .then(([apiVersions, apiObservaciones]) => {
+        if (!active) return;
+        setVersions(sortVersionsByCompilationDateDesc(apiVersions.map(toVersion)));
+        setObservaciones(apiObservaciones);
+      })
+      .catch((e) => active && setError(e instanceof Error ? e.message : "Error cargando datos"))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, []);
+
+  if (loading) return <div className="p-6 text-sm text-slate-500">Cargando información...</div>;
+  if (error) return <div className="m-6 rounded-lg border border-[#d43a39]/20 bg-[#d43a39]/10 p-3 text-sm text-[#d43a39]">{error}<button onClick={()=>toast.success("Reintentando")} className="ml-2 px-2 py-1 bg-[#0778ac] text-white rounded text-xs">Reintentar</button></div>;
+
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="flex gap-2 mb-6">
-        {["registro","consulta","detalles","solicitudParametro","reporteFirmas","reporteDetalles"].map(t=> (
-          <button key={t} onClick={()=>setTab(t)} className={`px-3 py-1.5 rounded-lg text-sm border ${tab===t?"bg-[#0778ac] text-white border-[#0778ac]":"bg-white text-slate-600"}`}>{t}</button>
-        ))}
-      </div>
-      <div className="bg-white rounded-xl border p-6">
-        <p className="text-sm">CoordinatorModule migrando desde App.tsx:966 (175 líneas) + VersionRegistration:1145 + VersionQuery:1223 + ValidationDetails:1398 + Reports</p>
-        <p className="text-xs text-slate-400 mt-2">Tab activo: {tab}. Toast integrado con sonner. Próximo paso: mover cada sub-componente a features/versions/components/ , features/reports/.</p>
-        <button onClick={()=>toast.success("Sonner activo en Coordinator")} className="mt-3 px-3 py-1 bg-[#0778ac] text-white rounded-lg text-sm">Probar toast</button>
-      </div>
-    </div>
+    <CoordinatorModule
+      versions={versions}
+      setVersions={setVersions}
+      observaciones={observaciones}
+      setObservaciones={setObservaciones}
+      onError={setError}
+      selectedSection={coordinatorSection}
+      onSelectSection={setCoordinatorSection}
+      loggedUser={loggedUser}
+      onReturnHome={() => window.location.href = "/"}
+    />
   );
 }

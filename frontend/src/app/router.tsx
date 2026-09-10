@@ -24,6 +24,27 @@ export const router = createBrowserRouter([
     path: "/solicitud-usuario",
     element: <UsuariosSolicitudPortal />,
   },
+  // Fase 5 — Nuevas rutas modulares (mantienen /legacy por compatibilidad)
+  {
+    path: "/coordinator",
+    element: <AppLayout />,
+    children: [{ index: true, element: <CoordinatorPage /> }, { path: "*", element: <CoordinatorPage /> }],
+  },
+  {
+    path: "/validator",
+    element: <AppLayout />,
+    children: [{ index: true, element: <ValidatorPage /> }, { path: "*", element: <ValidatorPage /> }],
+  },
+  {
+    path: "/solicitud-parametro",
+    element: <AppLayout />,
+    children: [{ index: true, element: <SolicitudPage /> }],
+  },
+  {
+    path: "/home",
+    element: <AppLayout />,
+    children: [{ index: true, element: <HomePage /> }],
+  },
   {
     path: "/legacy",
     element: <AppLayout />,

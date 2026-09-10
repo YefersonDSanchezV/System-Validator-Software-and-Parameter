@@ -58,6 +58,9 @@ export interface ConfiguracionParametrosDTO {
   hora_restablecimiento: string;
   auto_restablecer: boolean;
   tipos_habilitados: string[];
+  correos_historia_clinica?: string;
+  correos_enfermeria?: string;
+  correos_otros?: string;
 }
 
 export const toSolicitudParametro = (item: ApiSolicitudParametro): SolicitudParametro => ({

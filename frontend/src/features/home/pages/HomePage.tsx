@@ -21,8 +21,9 @@ export function HomePage() {
       <div className="grid md:grid-cols-3 gap-6">
         <Card title="Coordinador" subtitle="Gestión de versiones y reportes" icon={Monitor} onClick={() => navigate("/coordinator")} />
         <Card title="Validación" subtitle="Registro de observaciones" icon={ShieldCheck} onClick={() => navigate("/validator")} />
-        <Card title="Solicitud Parámetro" subtitle="Solicitud clínica" icon={ClipboardList} onClick={() => navigate("/solicitud")} />
+        <Card title="Solicitud Parámetro" subtitle="Solicitud clínica" icon={ClipboardList} onClick={() => navigate("/solicitud-parametro")} />
       </div>
+      <p className="mt-6 text-xs text-slate-400 text-center">Fase 5: rutas /coordinator, /validator, /solicitud-parametro activas. /legacy/* mantiene compatibilidad.</p>
     </div>
   );
 }

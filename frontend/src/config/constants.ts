@@ -21,4 +21,29 @@ export const MODULO_LABELS: Record<string,string> = {
   PROGRAMACION_DE_CIRUGIAS: "PROGRAMACION DE CIRUGIAS",
 };
 
-export const MODULOS_VALIDATOR = [...MODULOS, "OTROS"] as const;
+export const MODULOS_VALIDATOR = MODULOS as unknown as readonly string[];
+
+// Fase 1 — Centralizados desde AccessRequestSections.tsx:74
+export const AREAS_RESTABLECIMIENTO = [
+  "ADMINISTRATIVO",
+  "ADMISIONES",
+  "ALMACEN",
+  "AUDITORIA",
+  "CARTERA",
+  "COMUNICACIONES",
+  "CONSULTA EXTERNA",
+  "CONTABILIDAD",
+  "ENFERMERIA",
+  "FACTURACION",
+  "FARMACIA",
+  "FISIOTERAPIA",
+  "INFRAESTRUCTURA",
+  "INVESTIGACION",
+  "LABORATORIO",
+  "MEDICOS",
+  "RADICACION",
+  "SISTEMAS",
+  "OTROS",
+] as const;
+
+export const CHART_COLORS = ["#0778ac", "#10b981", "#f59e0b", "#6366f1", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316"] as const;

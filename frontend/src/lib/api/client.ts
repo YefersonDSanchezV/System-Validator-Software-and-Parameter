@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/config/constants";
+import { getBearerToken } from "@/lib/api/auth";
 
 const AUTHENTICATED_USER_KEY = "svs-authenticated-user";
 let cachedPrivateIp = "";
@@ -64,6 +65,11 @@ function appendAuditHeaders(headers: Headers) {
   if (authenticatedUser) {
     headers.set("X-User-Name", authenticatedUser);
     headers.set("X-User-Role", authenticatedUser);
+  }
+  // Fase 1 — Bearer JWT unificado: inyectar Authorization automáticamente
+  const bearer = getBearerToken();
+  if (bearer && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${bearer}`);
   }
   if (cachedPrivateIp) {
     headers.set("X-Client-Private-IP", cachedPrivateIp);
@@ -142,4 +148,11 @@ export function setAuthenticatedApiUser(username: string) {
 export function clearAuthenticatedApiUser() {
   if (typeof window === "undefined") return;
   window.sessionStorage.removeItem(AUTHENTICATED_USER_KEY);
+  // Fase 1 — limpiar también Bearer (unificado)
+  try {
+    window.localStorage.removeItem("usuarios_solicitud_token");
+    window.localStorage.removeItem("usuarios_solicitud_user");
+  } catch {
+    // no-op
+  }
 }
