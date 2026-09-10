@@ -22,14 +22,16 @@ from app.utils.pdf_generator import generate_firmas_report_pdf
 
 logger = logging.getLogger(__name__)
 
+# Debe coincidir con los submódulos visibles en Generales > Permisos.  No se
+# conservan claves heredadas: de otra forma un permiso invisible no puede ser
+# revocado desde la interfaz.
 ALL_COORDINATOR_SECTIONS = [
-    "registro", "restaurarDB", "consultaVersiones", "consultaRestauracionDB", "versionParametros",
-    "detalles", "solicitudParametro", "solicitudUsuario", "solicitudPassword", "parametrosConfig",
+    "registro", "restaurarDB", "consultaVersiones", "consultaRestauracionDB",
+    "parametrosCorreos", "valoresParametros", "detalles",
+    "solicitudParametro", "solicitudUsuario", "solicitudPassword", "solicitudesManuales",
     "reporteFirmas", "reporteDetalles", "documentos_boletines", "documentos_manuales",
-    "solicitudesManuales", "auditoria", "permisos",
-    "parametrosCorreos", "parametrosEnviosCorreo", "parametrosSolicitudes", "valoresParametros",
-    "modulosInicio",
-    "generalesPermisos", "generalesPlataformas", "generalesUsuarios", "generalesUsuariosPermisos"
+    "auditoria", "modulosInicio",
+    "generalesPermisos", "generalesPlataformas", "generalesUsuarios", "generalesUsuariosPermisos",
 ]
 
 class VersionService:
@@ -157,19 +159,25 @@ class VersionService:
             if p and p.permisos:
                 try:
                     secciones = json.loads(p.permisos)
-                    if isinstance(secciones, list):
-                        # Ensure default newly added sections are included if user is admin or has generales
-                        if "modulosInicio" not in secciones and (u == "sistemas" or "generalesPermisos" in secciones or "permisos" in secciones):
-                            secciones.append("modulosInicio")
+                    if not isinstance(secciones, list):
+                        secciones = []
                 except Exception:
-                    secciones = list(ALL_COORDINATOR_SECTIONS)
+                    logger.warning("Permisos inválidos para el usuario coordinador %s", u)
+                    secciones = []
             else:
-                secciones = list(ALL_COORDINATOR_SECTIONS)
+                secciones = []
+            # Eliminar duplicados, claves obsoletas y accesos no reconocidos.
+            secciones = [key for key in ALL_COORDINATOR_SECTIONS if key in secciones]
             resultado.append({"usuario": u, "permisos": secciones})
         return resultado
 
     def guardar_permisos(self, db: Session, usuario: str, permisos: list[str]):
         u_clean = usuario.strip().lower()
+        if u_clean not in {"sistemas", "ingeniero", "practicante"}:
+            raise ValueError("Usuario coordinador no válido")
+        if any(key not in ALL_COORDINATOR_SECTIONS for key in permisos):
+            raise ValueError("La solicitud contiene permisos no reconocidos")
+        permisos = [key for key in ALL_COORDINATOR_SECTIONS if key in permisos]
         p = db.query(PermisoUsuarioCoordinador).filter(PermisoUsuarioCoordinador.usuario == u_clean).first()
         perm_json = json.dumps(permisos)
         now_bogota = datetime.now(ZoneInfo("America/Bogota")).replace(tzinfo=None)

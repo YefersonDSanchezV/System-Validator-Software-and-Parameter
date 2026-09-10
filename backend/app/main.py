@@ -165,26 +165,6 @@ def initialize_database():
         except Exception:
             pass
 
-        # Update permisos_usuario_coordinador to ensure modulosInicio is present for admin users
-        try:
-            p_rows = conn.execute(text("SELECT id, usuario, permisos FROM permisos_usuario_coordinador")).fetchall()
-            for row in p_rows:
-                p_id, p_user, p_perm_raw = row[0], row[1], row[2]
-                if p_perm_raw:
-                    try:
-                        p_list = json.loads(p_perm_raw)
-                        if isinstance(p_list, list) and "modulosInicio" not in p_list:
-                            p_list.append("modulosInicio")
-                            conn.execute(
-                                text("UPDATE permisos_usuario_coordinador SET permisos = :perm WHERE id = :id"),
-                                {"perm": json.dumps(p_list), "id": p_id}
-                            )
-                    except Exception:
-                        pass
-        except Exception as exc:
-            logger.warning("Error actualizando permisos_usuario_coordinador: %s", exc)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(settings.UPLOAD_FOLDER, exist_ok=True)

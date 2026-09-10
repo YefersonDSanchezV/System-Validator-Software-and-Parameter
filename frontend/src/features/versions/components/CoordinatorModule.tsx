@@ -200,24 +200,8 @@ function CoordinatorModule({
   }, [selectedSection]);
 
   const canAccess = (key: string) => {
-    if (key === "parametrosCorreos") {
-      return (
-        userPermissions.includes("parametrosCorreos") ||
-        userPermissions.includes("parametrosEnviosCorreo") ||
-        userPermissions.includes("parametrosSolicitudes") ||
-        userPermissions.includes("parametrosCorreosNotificaciones") ||
-        userPermissions.includes("versionParametros") ||
-        userPermissions.includes("parametrosConfig")
-      );
-    }
-    if (key === "modulosInicio") {
-      return (
-        userPermissions.includes("modulosInicio") ||
-        userPermissions.includes("generalesPermisos") ||
-        userPermissions.includes("permisos") ||
-        userPermissions.includes("registro")
-      );
-    }
+    // Cada submódulo exige su permiso explícito. No deben heredarse accesos
+    // desde Registro, Generales ni claves antiguas.
     return userPermissions.includes(key);
   };
 
