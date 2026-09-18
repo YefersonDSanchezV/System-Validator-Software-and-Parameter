@@ -160,7 +160,8 @@ export default function App() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [observaciones, setObservaciones] = useState<Observacion[]>([]);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // Estado de autenticación para Solicitudes de Creación de Usuario — Fase 1: Bearer unificado
   const [solicitudUserLoggedIn, setSolicitudUserLoggedIn] = useState(() => !!getBearerToken());
@@ -183,17 +184,23 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (module !== "coordinator" && module !== "validator") return;
+    if (dataLoaded) return;
+
     let active = true;
+    setLoading(true);
+    setError("");
     Promise.all([api<ApiVersion[]>("/versions/"), api<Observacion[]>("/observaciones/")])
       .then(([apiVersions, apiObservaciones]) => {
         if (!active) return;
         setVersions(sortVersionsByCompilationDateDesc(apiVersions.map(toVersion)));
         setObservaciones(apiObservaciones);
+        setDataLoaded(true);
       })
       .catch((requestError) => active && setError(requestError instanceof Error ? requestError.message : "No fue posible conectar con el servidor."))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, []);
+  }, [module, dataLoaded]);
 
   if (module === "home") {
     return <><Toaster /><ModuleSelector onSelect={setModule} /></>;

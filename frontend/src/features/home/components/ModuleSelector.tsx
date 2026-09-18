@@ -56,24 +56,67 @@ const MODULE_CARDS = [
   },
 ];
 
+const STORAGE_KEY = "svs_modulos_inicio_config";
+
+function getCachedConfig(): ConfiguracionModulosInicioDTO | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return parsed as ConfiguracionModulosInicioDTO;
+      }
+    }
+  } catch {
+    // Ignore error
+  }
+  return null;
+}
+
 export function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "validator" | "solicitud" | "creacionUsuario" | "restablecimientoPassword") => void }) {
-  const [activeModules, setActiveModules] = useState<ConfiguracionModulosInicioDTO>({
-    coordinator: true,
-    creacionUsuario: true,
-    restablecimientoPassword: true,
-    validator: true,
-    solicitud: true,
-  });
+  const [activeModules, setActiveModules] = useState<ConfiguracionModulosInicioDTO | null>(() => getCachedConfig());
+  const [loading, setLoading] = useState<boolean>(() => !getCachedConfig());
 
   useEffect(() => {
+    let active = true;
     api<ConfiguracionModulosInicioDTO>("/parametros-clinicos/modulos-inicio")
       .then((data) => {
-        if (data) setActiveModules(data);
+        if (!active || !data) return;
+        setActiveModules(data);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } catch {
+          // Ignore
+        }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.error("Error al obtener módulos de inicio:", err);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const visibleModules = MODULE_CARDS.filter((mod) => activeModules[mod.key] !== false);
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          setActiveModules(parsed);
+        } catch {}
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
+
+  const visibleModules = activeModules
+    ? MODULE_CARDS.filter((mod) => activeModules[mod.key] !== false)
+    : [];
 
   const getGridColsClass = (count: number) => {
     if (count === 1) return "grid-cols-1 max-w-md";
@@ -101,42 +144,67 @@ export function ModuleSelector({ onSelect }: { onSelect: (m: "coordinator" | "va
         <p className="text-slate-600 text-sm">Seleccione el módulo al cual desea acceder</p>
       </div>
 
-      <div className={`grid ${getGridColsClass(visibleModules.length)} gap-5 w-full justify-center`}>
-        {visibleModules.map((mod) => {
-          const Icon = mod.icon;
-          return (
-            <button
-              key={mod.key}
-              onClick={() => onSelect(mod.target)}
-              className={`group bg-white border rounded-3xl p-8 text-left transition-all duration-200 h-full relative border-slate-200 ${mod.hoverBorder} shadow-sm hover:shadow-xl cursor-pointer flex flex-col justify-between`}
+      {loading && !activeModules ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 max-w-5xl gap-5 w-full justify-center">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="bg-white border border-slate-200/80 rounded-3xl p-8 flex flex-col justify-between shadow-sm animate-pulse min-h-[260px]"
             >
               <div>
-                <div
-                  className="w-12 h-12 border rounded-2xl flex items-center justify-center mb-6 transition-all"
-                  style={{
-                    backgroundColor: `${mod.color}15`,
-                    borderColor: `${mod.color}25`,
-                  }}
-                >
-                  <Icon size={22} style={{ color: mod.color }} />
+                <div className="w-12 h-12 rounded-2xl bg-slate-200 mb-6" />
+                <div className="h-5 bg-slate-200 rounded-lg w-3/4 mb-3" />
+                <div className="space-y-2 mt-4">
+                  <div className="h-3.5 bg-slate-100 rounded w-full" />
+                  <div className="h-3.5 bg-slate-100 rounded w-5/6" />
+                  <div className="h-3.5 bg-slate-100 rounded w-2/3" />
                 </div>
-                <h2 className="text-base font-bold text-slate-900 mb-2">{mod.title}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed">
-                  {mod.description}
-                </p>
               </div>
-              <div className={`mt-6 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide transition-all ${mod.btnColor} group-hover:gap-2.5`}>
-                Ingresar <ChevronRight size={14} />
+              <div className="mt-8 flex items-center gap-2">
+                <div className="h-4 bg-slate-200 rounded w-24" />
               </div>
-            </button>
-          );
-        })}
-        {visibleModules.length === 0 && (
-          <div className="col-span-full bg-white rounded-3xl border border-slate-200 p-12 text-center text-slate-500 shadow-sm">
-            No hay módulos habilitados en la pantalla de inicio en este momento.
-          </div>
-        )}
-      </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className={`grid ${getGridColsClass(visibleModules.length)} gap-5 w-full justify-center`}>
+          {visibleModules.map((mod) => {
+            const Icon = mod.icon;
+            return (
+              <button
+                key={mod.key}
+                onClick={() => onSelect(mod.target)}
+                className={`group bg-white border rounded-3xl p-8 text-left transition-all duration-200 h-full relative border-slate-200 ${mod.hoverBorder} shadow-sm hover:shadow-xl cursor-pointer flex flex-col justify-between`}
+              >
+                <div>
+                  <div
+                    className="w-12 h-12 border rounded-2xl flex items-center justify-center mb-6 transition-all"
+                    style={{
+                      backgroundColor: `${mod.color}15`,
+                      borderColor: `${mod.color}25`,
+                    }}
+                  >
+                    <Icon size={22} style={{ color: mod.color }} />
+                  </div>
+                  <h2 className="text-base font-bold text-slate-900 mb-2">{mod.title}</h2>
+                  <p className="text-slate-600 text-sm leading-relaxed">
+                    {mod.description}
+                  </p>
+                </div>
+                <div className={`mt-6 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide transition-all ${mod.btnColor} group-hover:gap-2.5`}>
+                  Ingresar <ChevronRight size={14} />
+                </div>
+              </button>
+            );
+          })}
+          {visibleModules.length === 0 && (
+            <div className="col-span-full bg-white rounded-3xl border border-slate-200 p-12 text-center text-slate-500 shadow-sm">
+              No hay módulos habilitados en la pantalla de inicio en este momento.
+            </div>
+          )}
+        </div>
+      )}
+
       <p className="text-slate-500 text-xs mt-12">© 2026 Validacion y Solicitudes - Area de Tecnología de la Información. Todos los derechos reservados.</p>
     </div>
   );

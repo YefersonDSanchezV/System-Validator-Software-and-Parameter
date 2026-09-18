@@ -71,7 +71,14 @@ export function ModulosInicioSection({ onError }: { onError: (msg: string) => vo
   const fetchConfig = () => {
     setLoading(true);
     api<ConfiguracionModulosInicioDTO>("/parametros-clinicos/modulos-inicio")
-      .then((data) => setConfig(data))
+      .then((data) => {
+        if (data) {
+          setConfig(data);
+          try {
+            localStorage.setItem("svs_modulos_inicio_config", JSON.stringify(data));
+          } catch {}
+        }
+      })
       .catch((err) => onError(err instanceof Error ? err.message : "Error cargando módulos de inicio"))
       .finally(() => setLoading(false));
   };
@@ -95,6 +102,9 @@ export function ModulosInicioSection({ onError }: { onError: (msg: string) => vo
     })
       .then((data) => {
         setConfig(data);
+        try {
+          localStorage.setItem("svs_modulos_inicio_config", JSON.stringify(data));
+        } catch {}
         toast.success("Configuración de módulos de inicio guardada correctamente.");
       })
       .catch((err) => onError(err instanceof Error ? err.message : "Error guardando módulos"))

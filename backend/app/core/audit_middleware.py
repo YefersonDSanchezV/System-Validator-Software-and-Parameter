@@ -202,10 +202,13 @@ def resolve_client_host_name(request: Request, client_ip: str) -> str:
         header_value = request.headers.get(header_name, "").strip()
         if header_value:
             return header_value
-    parsed_ip = ip_address(client_ip)
-    if parsed_ip.is_loopback or parsed_ip.is_link_local:
+    try:
+        parsed_ip = ip_address(client_ip)
+        if parsed_ip.is_loopback or parsed_ip.is_link_local:
+            return "No disponible"
+    except Exception:
         return "No disponible"
-    return resolve_host_name(client_ip)
+    return _HOSTNAME_CACHE.get(client_ip, "No disponible")
 
 
 def extract_windows_user(request: Request, fallback_user: str) -> str:
@@ -278,7 +281,17 @@ def persist_log_entry(
     detalle: str,
     payload_json: dict,
 ) -> None:
+    if not host_name or host_name == "No disponible":
+        try:
+            parsed_ip = ip_address(client_ip)
+            if not parsed_ip.is_loopback and not parsed_ip.is_link_local:
+                host_name = resolve_host_name(client_ip)
+        except Exception:
+            pass
     host_name, windows_user = enrich_identity_from_netbios(client_ip, host_name, windows_user)
+    if payload_json:
+        payload_json["nombre_equipo"] = host_name
+        payload_json["usuario_windows_equipo"] = windows_user
     try:
         db = SessionLocal()
         try:

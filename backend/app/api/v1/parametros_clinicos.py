@@ -166,8 +166,15 @@ def update_config(data: ConfiguracionParametrosDTO, db: Session = Depends(get_db
     }
 
 
+_MODULOS_INICIO_CACHE: Optional[dict] = None
+
+
 @router.get("/modulos-inicio", response_model=ConfiguracionModulosInicioDTO)
 def get_modulos_inicio(db: Session = Depends(get_db)):
+    global _MODULOS_INICIO_CACHE
+    if _MODULOS_INICIO_CACHE is not None:
+        return _MODULOS_INICIO_CACHE
+
     conf = db.query(ConfiguracionModulosInicio).first()
     if not conf:
         default_mods = {
@@ -181,17 +188,20 @@ def get_modulos_inicio(db: Session = Depends(get_db)):
         db.add(conf)
         db.commit()
         db.refresh(conf)
-    return conf.modulos or {
+    result = conf.modulos or {
         "coordinator": True,
         "creacionUsuario": True,
         "restablecimientoPassword": True,
         "validator": True,
         "solicitud": True,
     }
+    _MODULOS_INICIO_CACHE = result
+    return result
 
 
 @router.put("/modulos-inicio", response_model=ConfiguracionModulosInicioDTO)
 def update_modulos_inicio(data: ConfiguracionModulosInicioDTO, db: Session = Depends(get_db)):
+    global _MODULOS_INICIO_CACHE
     conf = db.query(ConfiguracionModulosInicio).first()
     if not conf:
         conf = ConfiguracionModulosInicio(id=1)
@@ -200,6 +210,7 @@ def update_modulos_inicio(data: ConfiguracionModulosInicioDTO, db: Session = Dep
     conf.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(conf)
+    _MODULOS_INICIO_CACHE = conf.modulos
     return conf.modulos
 
 @router.post("/restablecer-defecto")
