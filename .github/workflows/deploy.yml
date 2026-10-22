@@ -53,7 +53,7 @@ jobs:
           node-version: "20"
 
       - name: Instalar dependencias
-        run: npm ci --legacy-peer-deps
+        run: npm install --legacy-peer-deps
 
       - name: Build de producción (Vite)
         run: npm run build
