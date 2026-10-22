@@ -59,9 +59,9 @@ jobs:
       - name: Build de producción (Vite)
         run: npm run build
 
-  # ---------------------------------------------------------------
+  # -------------------------------------------------------------
   # Job 3: Desplegar en el servidor self-hosted
-  # ---------------------------------------------------------------
+  # -------------------------------------------------------------
   deploy:
     name: Deploy a servidor dev
     needs: [test-backend, test-frontend]
