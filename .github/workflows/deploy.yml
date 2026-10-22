@@ -53,10 +53,55 @@ jobs:
           node-version: "20"
 
       - name: Instalar dependencias
-        run: npm install --legacy-peer-deps
+        run: npm install --legacy-peer-deps && npm uninstall @vitejs/plugin-react --legacy-peer-deps 2>/dev/null || true && npm install @vitejs/plugin-react@5.0.0 --legacy-peer-deps
 
-      - name: Build de producción (Vite)
-        run: npm run build
+      - name: Configurar Vite JSX Runtime
+        run: |
+          # Generar vite.config.ts compatible con @vitejs/plugin-react@5.0.0
+          # Usamos modo classic para evitar el error de ./internal en v6
+          cat > frontend/vite.config.ts << 'EOF'
+import { defineConfig } from 'vite'
+import path from 'path'
+import tailwindcss from '@tailwindcss/vite'
+import react from '@vitejs/plugin-react'
+
+function figmaAssetResolver() {
+  return {
+    name: 'figma-asset-resolver',
+    resolveId(id) {
+      if (id.startsWith('figma:asset/')) {
+        const filename = id.replace('figma:asset/', '')
+        return path.resolve(__dirname, 'src/assets', filename)
+      }
+    },
+  }
+}
+
+export default defineConfig({
+  plugins: [
+    figmaAssetResolver(),
+    react(),
+    tailwindcss(),
+  ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
+  },
+
+  // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
+  assetsInclude: ['**/*.svg', '**/*.csv'],
+})
+EOF
+          echo "vite.config.ts generado con modo classic"
 
   # -------------------------------------------------------------
   # Job 3: Desplegar en el servidor self-hosted
