@@ -15,3 +15,8 @@ class ManualRepository:
         db.commit()
         db.refresh(manual)
         return manual
+
+    def update(self, db: Session, manual: ManualUsuario):
+        db.commit()
+        db.refresh(manual)
+        return manual

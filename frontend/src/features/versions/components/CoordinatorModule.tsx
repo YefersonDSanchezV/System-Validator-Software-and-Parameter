@@ -27,9 +27,7 @@ import { ValidationDetails } from "@/features/observaciones/components/Validatio
 import { Boletines } from "@/features/boletines/components/Boletines";
 import { ManualesUsuarios } from "@/features/manuales/components/Manuales";
 import { VersionRegistration } from "@/features/versions/components/VersionRegistration";
-import { VersionQuery } from "@/features/versions/components/VersionQuery";
 import { RestaurarDBSection } from "@/features/versions/components/RestaurarDBSection";
-import { ConsultarRestauracionDBSection } from "@/features/versions/components/ConsultarRestauracionDBSection";
 import { ReportFirmas } from "@/features/reports/components/ReportFirmas";
 import { ReportDetalles } from "@/features/reports/components/ReportDetalles";
 import { AuditoriaSection } from "@/features/auditoria/components/AuditoriaSection";
@@ -323,47 +321,6 @@ function CoordinatorModule({
                       }`}
                     >
                       <span className="truncate block">Restaurar DB</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Folder: Consulta de Versión (ahora solo 2 items, Parámetros movido a módulo Parámetros) */}
-          {(canAccess("consultaVersiones") || canAccess("consultaRestauracionDB")) && (
-            <div className="px-2 py-1 space-y-1">
-              <button
-                onClick={() => toggleFolder("consultaVersion")}
-                className="w-full flex items-center justify-between px-3 py-2 text-slate-200 hover:text-white font-bold rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                <div className="flex items-center gap-2 text-[#0091ea]">
-                  <Search size={15} className="text-[#0091ea]" />
-                  <span>Consultas</span>
-                </div>
-                <ChevronDown size={12} className={`transition-transform ${openFolders.consultaVersion ? "rotate-180" : ""}`} />
-              </button>
-
-              {openFolders.consultaVersion && (
-                <div className="ml-4 pl-3 border-l border-slate-700/60 space-y-1 my-1">
-                  {canAccess("consultaVersiones") && matchesSearch("Consultar versión") && (
-                    <button
-                      onClick={() => goToSection("consultaVersiones")}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${
-                        activeSection === "consultaVersiones" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                      }`}
-                    >
-                      <span className="truncate block">Consultar versión</span>
-                    </button>
-                  )}
-                  {canAccess("consultaRestauracionDB") && matchesSearch("Consultar restauración BD") && (
-                    <button
-                      onClick={() => goToSection("consultaRestauracionDB")}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-md font-medium transition-all text-xs ${
-                        activeSection === "consultaRestauracionDB" ? "bg-[#0091ea] text-white font-bold shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                      }`}
-                    >
-                      <span className="truncate block">Consultar restauración BD</span>
                     </button>
                   )}
                 </div>
@@ -730,12 +687,6 @@ function CoordinatorModule({
         )}
         {activeSection === "restaurarDB" && (
           <RestaurarDBSection versions={versions} onError={onError} />
-        )}
-        {activeSection === "consultaVersiones" && (
-          <VersionQuery versions={versions} setVersions={setVersions} onError={onError} loggedUser={loggedUser} />
-        )}
-        {activeSection === "consultaRestauracionDB" && (
-          <ConsultarRestauracionDBSection versions={versions} onError={onError} />
         )}
         {activeSection === "versionParametros" && (
           <VersionCorreoParametrosSection onError={onError} />

@@ -75,7 +75,9 @@ class ObservacionService:
                 "fechaHora": ap.fecha_registro.strftime("%Y-%m-%d %H:%M") if ap.fecha_registro else "",
                 "estado": "aprobacion",
                 "observacion": ap.observacion,
-                "firma": ap.firma.firma if ap.firma else None
+                # Listado ligero: se omiten firmas/capturas para acelerar la carga.
+                "firma": None,
+                "captura": None,
             })
 
         # 2. Get rejections
@@ -105,8 +107,8 @@ class ObservacionService:
                 "observacion": re.observacion,
                 "incidencia": re.incidencia,
                 "ruta": ruta_val,
-                "firma": re.firma.firma if re.firma else None,
-                "captura": _parse_captura(re.captura.firma) if re.captura else None
+                "firma": None,
+                "captura": None,
             })
 
         # Sort latest first
@@ -138,7 +140,8 @@ class ObservacionService:
                 "fechaHora": ap.fecha_registro.strftime("%Y-%m-%d %H:%M") if ap.fecha_registro else "",
                 "estado": "aprobacion",
                 "observacion": ap.observacion,
-                "firma": ap.firma.firma if ap.firma else None
+                "firma": ap.firma.firma if ap.firma else None,
+                "captura": _parse_captura(ap.captura.firma) if getattr(ap, "captura", None) else None
             })
 
         # 2. Get rejections for this version
@@ -208,17 +211,24 @@ class ObservacionService:
             # 3. Create approved or rejected record
             captura_b64 = None
             if data.estado == "aprobacion":
+                # Handle optional captura images
+                captura_obj = None
+                if getattr(data, "captura", None):
+                    captura_obj = self.repository.create_firma(db, json.dumps(data.captura))
                 aprobado = RegAprobado(
                     regvalidacion_id=val_obj.oid,
                     observacion=data.observacion,
                     nombre_registra=data.nombre,
                     cargo=data.cargo,
                     firma_id=firma_obj.oid,
+                    captura_id=captura_obj.oid if captura_obj else None,
                     fecha_registro=datetime.now()
                 )
                 obs_obj = self.repository.create_aprobado(db, aprobado)
+                db.refresh(obs_obj)
                 obs_id = f"o_ap_{obs_obj.oid}"
                 fecha_str = aprobado.fecha_registro.strftime("%Y-%m-%d %H:%M")
+                captura_b64 = data.captura
             else:
                 # Handle optional captura image
                 captura_obj = None
@@ -256,7 +266,7 @@ class ObservacionService:
                 "incidencia": data.incidencia,
                 "ruta": data.ruta,
                 "firma": data.firma,
-                "captura": data.captura if data.estado == "rechazo" else None
+                "captura": data.captura
             }
         except Exception:
             db.rollback()

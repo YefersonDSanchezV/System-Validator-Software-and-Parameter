@@ -1,9 +1,9 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import type React from "react";
 import { CheckCircle, XCircle, ExternalLink, Eye, Plus, AlertCircle, Upload } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { Modal, StatusBadge, Btn, Field, FormInput, FormTextarea, SectionHeader } from "@/components/ui/custom";
-import type { Version } from "@/types/version";
+import type { Version, RestauracionDB } from "@/types/version";
 import type { Observacion } from "@/types/observacion";
 import { MODULOS_VALIDATOR } from "@/config/constants";
 import { useTablePagination } from "@/hooks/useTablePagination";
@@ -22,10 +22,41 @@ export function ValidationRegistration({
   const [detailForm, setDetailForm] = useState({ modulo: "", otrosText: "" });
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [rejectionOpen, setRejectionOpen] = useState(false);
-  const [apForm, setApForm] = useState({ observacion: "", nombre: "", cargo: "", firma: "" });
+  const [apForm, setApForm] = useState({ observacion: "", nombre: "", cargo: "", firma: "", captura: [] as string[] });
   const [reForm, setReForm] = useState({ incidencia: "", ruta: "", observacion: "", nombre: "", cargo: "", firma: "", captura: [] as string[] });
   const [vrColFilters, setVrColFilters] = useState({ titulo: "", fecha: "", estado: "", contenedor: "" });
+  const [restauraciones, setRestauraciones] = useState<RestauracionDB[]>([]);
+  const [consultObservaciones, setConsultObservaciones] = useState<Observacion[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    api<RestauracionDB[]>("/versions/restauraciones", { cache: "no-store" })
+      .then((data) => { if (active) setRestauraciones(data); })
+      .catch(() => { /* no-op: columna mostrará "—" */ });
+    return () => { active = false; };
+  }, []);
+
+  const ultimaRestauracionPorContenedor = restauraciones.reduce<Record<string, string>>((acc, r) => {
+    const key = (r.contenedor_bd || "").toUpperCase();
+    if (!key) return acc;
+    const fecha = r.fecha_hora_restauracion?.slice(0, 16).replace("T", " ") || "";
+    if (!acc[key] || fecha > acc[key]) acc[key] = fecha;
+    return acc;
+  }, {});
+
+  useEffect(() => {
+    if (!consultVersion) {
+      setConsultObservaciones([]);
+      return;
+    }
+    let active = true;
+    api<Observacion[]>(`/observaciones/version/${Number(consultVersion.id.slice(1))}`)
+      .then((data) => { if (active) setConsultObservaciones(data); })
+      .catch(() => { if (active) setConsultObservaciones([]); });
+    return () => { active = false; };
+  }, [consultVersion]);
   const firmaApRef = useRef<HTMLInputElement>(null);
+  const capturaApRef = useRef<HTMLInputElement>(null);
   const firmaReRef = useRef<HTMLInputElement>(null);
   const capturaReRef = useRef<HTMLInputElement>(null);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
@@ -76,7 +107,7 @@ export function ValidationRegistration({
       });
       setObservaciones((prev) => [created, ...prev]);
       setApprovalOpen(false);
-      setApForm({ observacion: "", nombre: "", cargo: "", firma: "" });
+      setApForm({ observacion: "", nombre: "", cargo: "", firma: "", captura: [] as string[] });
       setDetailsVersion(null);
     } catch (error) {
       onError(error instanceof Error ? error.message : "No fue posible registrar la aprobación.");
@@ -140,7 +171,7 @@ export function ValidationRegistration({
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              {["Título Versión", "Contenedor BD", "Fecha Compilación", "Estado", "Enlace", "Obs.", "Acciones"].map((h) => (
+              {["Título Versión", "Contenedor BD", "Última Restauración BD", "Fecha Compilación", "Estado", "Enlace", "Obs.", "Acciones"].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider"
@@ -152,6 +183,7 @@ export function ValidationRegistration({
             <tr className="bg-slate-100/90 border-t border-slate-200">
               <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar título" onChange={(e) => setVrColFilters((p) => ({ ...p, titulo: e.target.value }))} /></th>
               <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar contenedor" onChange={(e) => setVrColFilters((p) => ({ ...p, contenedor: e.target.value }))} /></th>
+              <th className="px-4 py-1.5"></th>
               <th className="px-4 py-1.5"><input className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" placeholder="Filtrar fecha" onChange={(e) => setVrColFilters((p) => ({ ...p, fecha: e.target.value }))} /></th>
               <th className="px-4 py-1.5">
                 <select className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-normal" onChange={(e) => setVrColFilters((p) => ({ ...p, estado: e.target.value }))}>
@@ -171,6 +203,9 @@ export function ValidationRegistration({
               <tr key={v.id} className="hover:bg-slate-50/80 transition-colors">
                 <td className="px-4 py-3 font-medium text-slate-900 max-w-xs">{v.titulo}</td>
                 <td className="px-4 py-3 font-bold text-[#0778ac] text-xs">{v.contenedor_bd || "—"}</td>
+                <td className="px-4 py-3 text-slate-700 font-mono text-xs whitespace-nowrap">
+                  {(v.contenedor_bd && ultimaRestauracionPorContenedor[v.contenedor_bd.toUpperCase()]) || "—"}
+                </td>
                 <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fecha_compilacion || "—"}</td>
                 <td className="px-4 py-3">
                   <StatusBadge estado={v.estado} />
@@ -258,17 +293,16 @@ export function ValidationRegistration({
                   Cola de Observaciones
                 </h3>
                 <span className="text-xs text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full font-medium">
-                  {observaciones.filter((o) => o.versionId === consultVersion.id).length} registro(s)
+                  {consultObservaciones.length} registro(s)
                 </span>
               </div>
-              {observaciones.filter((o) => o.versionId === consultVersion.id).length === 0 ? (
+              {consultObservaciones.length === 0 ? (
                 <div className="text-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
                   No hay observaciones registradas para esta versión.
                 </div>
               ) : (
                 <div className="flex flex-col gap-3 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
-                  {observaciones
-                    .filter((o) => o.versionId === consultVersion.id)
+                  {consultObservaciones
                     .map((obs) => (
                       <div
                         key={obs.id}
@@ -479,6 +513,60 @@ export function ValidationRegistration({
               onChange={(e) => handleFirma(e, "ap")}
             />
           </div>
+          {/* Captura de la Incidencia (Aprobación) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+              Capturas (múltiples imágenes)
+            </label>
+            {apForm.captura.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-1">
+                {apForm.captura.map((src, idx) => (
+                  <div key={idx} className="relative group">
+                    <img
+                      src={src}
+                      alt={`captura-${idx}`}
+                      className="h-16 w-24 object-cover rounded-lg border border-slate-200 cursor-zoom-in hover:opacity-80 transition-opacity"
+                      onClick={() => setLightboxImg(src)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setApForm((f) => ({ ...f, captura: f.captura.filter((_, i) => i !== idx) }))}
+                      className="absolute -top-1.5 -right-1.5 bg-[#d43a39] text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div
+              onClick={() => capturaApRef.current?.click()}
+              className="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 transition-all"
+            >
+              <div className="flex flex-col items-center gap-2 text-slate-400">
+                <Upload size={20} />
+                <span className="text-xs">Haga clic para agregar capturas ({apForm.captura.length} cargada{apForm.captura.length !== 1 ? "s" : ""})</span>
+              </div>
+            </div>
+            <input
+              ref={capturaApRef}
+              type="file"
+              accept=".jpg,.jpeg,.png"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                files.forEach((file) => {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    const res = ev.target?.result as string;
+                    setApForm((f) => ({ ...f, captura: [...f.captura, res] }));
+                  };
+                  reader.readAsDataURL(file);
+                });
+                e.target.value = "";
+              }}
+            />
+          </div>
+
           <div className="flex gap-2 pt-2 border-t border-slate-100">
             <Btn
               v="success"

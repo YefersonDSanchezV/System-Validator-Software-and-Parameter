@@ -13,6 +13,12 @@ class ManualUsuarioBase(BaseModel):
 class ManualUsuarioCreate(ManualUsuarioBase):
     pass
 
+class ManualUsuarioUpdate(BaseModel):
+    modulo: Optional[str] = None
+    titulo: Optional[str] = None
+    version: Optional[str] = None
+    archivo: Optional[str] = None
+
 
 class ManualUsuarioResponse(ManualUsuarioBase):
     oid: int

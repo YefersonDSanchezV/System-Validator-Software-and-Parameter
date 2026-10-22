@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.manual import (
     ManualUsuarioCreate,
+    ManualUsuarioUpdate,
     ManualUsuarioResponse,
     SolicitudManualCreate,
     SolicitudManualResponse
@@ -47,6 +48,16 @@ async def crear(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
+@router.put("/{oid}", response_model=ManualUsuarioResponse)
+def actualizar(oid: int, data: ManualUsuarioUpdate, db: Session = Depends(get_db)):
+    try:
+        return service.actualizar(db, oid, data)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/solicitudes", response_model=SolicitudManualResponse, status_code=201)
 def crear_solicitud(data: SolicitudManualCreate, db: Session = Depends(get_db)):

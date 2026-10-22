@@ -22,3 +22,17 @@ class ManualService:
             fecha_registro=datetime.now()
         )
         return self.repository.create(db, nuevo)
+
+    def actualizar(self, db: Session, oid: int, data):
+        manual = self.repository.get_by_id(db, oid)
+        if not manual:
+            raise ValueError("Manual no encontrado")
+        if data.modulo is not None:
+            manual.modulo = data.modulo
+        if data.titulo is not None:
+            manual.titulo = data.titulo
+        if data.version is not None:
+            manual.version = data.version
+        if data.archivo is not None:
+            manual.archivo = data.archivo
+        return self.repository.update(db, manual)

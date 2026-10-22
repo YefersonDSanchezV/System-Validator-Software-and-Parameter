@@ -50,6 +50,7 @@ def initialize_database():
 
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE regaprobados ADD COLUMN IF NOT EXISTS cargo VARCHAR(200)"))
+        conn.execute(text("ALTER TABLE regaprobados ADD COLUMN IF NOT EXISTS captura_id INTEGER REFERENCES firmas(oid)"))
         conn.execute(text("ALTER TABLE regrechazado ADD COLUMN IF NOT EXISTS cargo VARCHAR(200)"))
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS total_valor INTEGER"))
         conn.execute(text("ALTER TABLE solicitud_parametro ADD COLUMN IF NOT EXISTS total_unidad VARCHAR(20)"))

@@ -66,7 +66,13 @@ export function ValidationDetails({
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
-                {["Módulo", "Última Observación", "% Aprobación", "% Rechazo", "Acción"].map((h) => (
+                {[
+                "Módulo",
+                "Última Observación",
+                `% Aprobación (${obsForVersion.filter((o) => o.estado === "aprobacion").length})`,
+                `% Rechazo (${obsForVersion.filter((o) => o.estado !== "aprobacion").length})`,
+                "Acción",
+              ].map((h) => (
                   <th
                     key={h}
                     className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider"

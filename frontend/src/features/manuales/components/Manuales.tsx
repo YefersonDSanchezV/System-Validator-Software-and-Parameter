@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Download, Upload, FileText, Eye, BookOpen, AlertCircle, Plus, Search, Printer } from "lucide-react";
+import { Download, Upload, FileText, Eye, BookOpen, AlertCircle, Plus, Search, Printer, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { api, downloadApiFile } from "@/lib/api/client";
 import { Modal, Btn, StatusBadge, EmptyState, Field, FormInput, SectionHeader } from "@/components/ui/custom";
@@ -29,8 +29,11 @@ import { MODULOS, MODULO_LABELS } from "@/config/constants";
 
 // ─── Manuales Row with Download Request Flow ──────────────────────────────────
 
-function ManualRow({ m }: { m: ApiManual }) {
+function ManualRow({ m, canUpload = false, onUpdated }: { m: ApiManual; canUpload?: boolean; onUpdated?: (updated: ApiManual) => void }) {
   const [downloadStatus, setDownloadStatus] = useState<{ activo: boolean; minutos_restantes: number }>({ activo: false, minutos_restantes: 0 });
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editForm, setEditForm] = useState({ modulo: m.modulo, titulo: m.titulo, version: m.version || "" });
   const [solicitudOpen, setSolicitudOpen] = useState(false);
   const [solForm, setSolForm] = useState({ nombre_solicitante: "", area: "", descripcion: "" });
   const [submitting, setSubmitting] = useState(false);
@@ -81,6 +84,11 @@ function ManualRow({ m }: { m: ApiManual }) {
       <td className="px-4 py-3 text-slate-500 text-xs font-mono">{m.fecha_registro.slice(0, 10)}</td>
       <td className="px-4 py-3 text-slate-500 text-xs font-mono">—</td>
       <td className="px-4 py-3">
+        {canUpload && (
+          <Btn v="ghost" sm onClick={() => { setEditForm({ modulo: m.modulo, titulo: m.titulo, version: m.version || "" }); setEditOpen(true); }}>
+            <Pencil size={13} /> Editar
+          </Btn>
+        )}
         {m.archivo ? (
           downloadStatus.activo ? (
             <a href={m.archivo} target="_blank" rel="noreferrer">
@@ -95,6 +103,64 @@ function ManualRow({ m }: { m: ApiManual }) {
           )
         ) : (
           <span className="text-xs text-slate-400">Sin archivo</span>
+        )}
+
+        {canUpload && (
+          <Modal open={editOpen} onClose={() => setEditOpen(false)} title={`Editar Manual: ${m.titulo}`} size="md">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Módulo</label>
+                <select
+                  value={editForm.modulo}
+                  onChange={(e) => setEditForm({ ...editForm, modulo: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+                >
+                  {MODULOS.map((modulo) => (
+                    <option key={modulo} value={modulo}>{MODULO_LABELS[modulo] ?? modulo}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Título</label>
+                <input
+                  type="text"
+                  value={editForm.titulo}
+                  onChange={(e) => setEditForm({ ...editForm, titulo: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Versión</label>
+                <input
+                  type="text"
+                  value={editForm.version}
+                  onChange={(e) => setEditForm({ ...editForm, version: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+                />
+              </div>
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <Btn v="primary" disabled={editSaving} onClick={async () => {
+                  setEditSaving(true);
+                  try {
+                    const updated = await api<ApiManual>(`/manuales/${m.oid}`, {
+                      method: "PUT",
+                      body: JSON.stringify({ modulo: editForm.modulo, titulo: editForm.titulo, version: editForm.version || null }),
+                    });
+                    onUpdated?.(updated);
+                    setEditOpen(false);
+                    toast.success("Manual actualizado exitosamente.");
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "Error al actualizar el manual");
+                  } finally {
+                    setEditSaving(false);
+                  }
+                }}>
+                  <Pencil size={13} /> Guardar
+                </Btn>
+                <Btn v="secondary" onClick={() => setEditOpen(false)}>Cancelar</Btn>
+              </div>
+            </div>
+          </Modal>
         )}
 
         <Modal open={solicitudOpen} onClose={() => setSolicitudOpen(false)} title={`Solicitar Descarga: ${m.titulo}`} size="md">
@@ -253,7 +319,7 @@ function ManualesUsuarios({ canUpload = true }: { canUpload?: boolean }) {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {manualPagination.rows.map((m) => (
-              <ManualRow key={m.oid} m={m} />
+              <ManualRow key={m.oid} m={m} canUpload={canUpload} onUpdated={(updated) => setItems((prev) => prev.map((it) => (it.oid === updated.oid ? updated : it)))} />
             ))}
           </tbody>
         </table>

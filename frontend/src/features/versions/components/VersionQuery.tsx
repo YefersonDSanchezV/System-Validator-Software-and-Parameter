@@ -20,7 +20,7 @@ import {
   FormTextarea,
   SectionHeader,
 } from "@/components/ui/custom";
-import { type Version, type ApiVersion, toVersion } from "@/types/version";
+import { type Version, type ApiVersion, type RestauracionDB, toVersion } from "@/types/version";
 import { useTablePagination } from "@/hooks/useTablePagination";
 import { TablePaginationControls } from "@/components/ui/TablePagination";
 
@@ -48,6 +48,19 @@ export function VersionQuery({
     compilacion: "",
     estado: "",
   });
+  const [restauraciones, setRestauraciones] = useState<RestauracionDB[]>([]);
+  useEffect(() => {
+    api<RestauracionDB[]>("/versions/restauraciones", { cache: "no-store" })
+      .then(setRestauraciones)
+      .catch(() => setRestauraciones([]));
+  }, []);
+  const ultimaRestauracionPorContenedor = restauraciones.reduce<Record<string, string>>((acc, r) => {
+    const key = (r.contenedor_bd || "").toUpperCase();
+    if (!key) return acc;
+    const fecha = r.fecha_hora_restauracion?.slice(0, 16).replace("T", " ") || "";
+    if (!acc[key] || fecha > acc[key]) acc[key] = fecha;
+    return acc;
+  }, {});
 
   const filteredVersions = versions.filter((v) => {
     const matchTitulo = !colFilters.titulo || (v.titulo || "").toLowerCase().includes(colFilters.titulo.toLowerCase());
@@ -181,6 +194,9 @@ export function VersionQuery({
               {isCoordinator && (
                 <th className="px-4 py-3 text-left text-[10px] font-bold text-[#0778ac] uppercase tracking-wider bg-slate-50">Contenedor BD</th>
               )}
+              {isCoordinator && (
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">Última Restauración BD</th>
+              )}
               <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">N° Compilación</th>
               <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">Fecha Compilación</th>
               <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">Fecha Registro</th>
@@ -208,6 +224,9 @@ export function VersionQuery({
                     className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-normal bg-white"
                   />
                 </th>
+              )}
+              {isCoordinator && (
+                <th className="px-2 py-1.5 bg-slate-100 font-normal"></th>
               )}
               <th className="px-2 py-1.5 bg-slate-100 font-normal">
                 <input
@@ -243,6 +262,11 @@ export function VersionQuery({
                   <td className="px-4 py-3 font-medium text-slate-900 max-w-xs">{v.titulo}</td>
                   {isCoordinator && (
                     <td className="px-4 py-3 font-bold text-[#0778ac] text-xs">{v.contenedor_bd || "—"}</td>
+                  )}
+                  {isCoordinator && (
+                    <td className="px-4 py-3 text-slate-700 font-mono text-xs whitespace-nowrap">
+                      {(v.contenedor_bd && ultimaRestauracionPorContenedor[v.contenedor_bd.toUpperCase()]) || "—"}
+                    </td>
                   )}
                   <td className="px-4 py-3 text-slate-700 text-xs font-mono">{v.num_compilacion || "—"}</td>
                   <td className="px-4 py-3 text-slate-500 font-mono text-xs">{v.fecha_compilacion || "—"}</td>
