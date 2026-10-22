@@ -1,0 +1,107 @@
+name: CI/CD - Dev Deployment
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  # ---------------------------------------------------------------
+  # Job 1: Compilar y probar el backend (FastAPI con Python)
+  # ---------------------------------------------------------------
+  test-backend:
+    name: Backend - Build & Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ejecutar tests unitarios
+        run: |
+          python -m pytest tests/ -v --tb=short
+
+  # ---------------------------------------------------------------
+  # Job 2: Compilar el frontend (Next.js/React con Vite)
+  # ---------------------------------------------------------------
+  test-frontend:
+    name: Frontend - Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Instalar dependencias
+        run: npm ci --legacy-peer-deps
+
+      - name: Build de producción (Vite)
+        run: npm run build
+
+  # ---------------------------------------------------------------
+  # Job 3: Desplegar en el servidor self-hosted
+  # ---------------------------------------------------------------
+  deploy:
+    name: Deploy a servidor dev
+    needs: [test-backend, test-frontend]
+    runs-on: self-hosted
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Levantar stack de desarrollo
+        run: |
+          docker compose -f docker-compose.dev.yml up -d --build
+
+      - name: Health check backend (FastAPI)
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health; then
+              echo "Backend UP"
+              exit 0
+            fi
+            echo "Esperando backend... ($i/30)"
+            sleep 5
+          done
+          echo "Backend NO responde. Logs:"
+          docker logs intranet-backend-dev --tail 50
+          exit 1
+
+      - name: Health check frontend (Next.js)
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsS -o /dev/null http://localhost:3000; then
+              echo "Frontend UP"
+              exit 0
+            fi
+            echo "Esperando frontend... ($i/12)"
+            sleep 5
+          done
+          echo "Frontend NO responde. Logs:"
+          docker logs intranet-frontend-dev --tail 50
+          exit 1
+
+      - name: Limpiar imágenes obsoletas
+        if: always()
+        run: docker image prune -f
